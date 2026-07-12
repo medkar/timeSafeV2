@@ -2,16 +2,28 @@
 
 namespace tsafe {
 
+// Bornes de plausibilité d'un horodatage courant (revue #2) :
+// rejette 0 / non initialisé et les valeurs aberrantes, ce qui ferme aussi
+// l'overflow int64 dans les soustractions ci-dessous.
+static const int64_t kMinPlausibleEpoch = 1;              // > 0
+static const int64_t kMaxPlausibleEpoch = 32503680000LL;  // ~ an 3000
+
+static bool isPlausible(const TimeSample& s) {
+    return s.present
+        && s.epoch >= kMinPlausibleEpoch
+        && s.epoch <= kMaxPlausibleEpoch;
+}
+
 TimeStatus resolveTime(const TimeResolveInput& in) {
     TimeStatus out;
 
-    // Rassembler les sources présentes, calculer min et max.
+    // Rassembler les sources plausibles, calculer min et max.
     int count = 0;
     int64_t mn = 0;
     int64_t mx = 0;
     const TimeSample samples[2] = { in.https, in.rtc };
     for (int i = 0; i < 2; ++i) {
-        if (!samples[i].present) continue;
+        if (!isPlausible(samples[i])) continue;
         if (count == 0) {
             mn = samples[i].epoch;
             mx = samples[i].epoch;
