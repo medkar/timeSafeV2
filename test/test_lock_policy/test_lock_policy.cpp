@@ -113,6 +113,35 @@ void test_armed_with_no_condition_is_unlock() {
     TEST_ASSERT_EQUAL_INT((int)PolicyState::Unlock, (int)decide(in).state);
 }
 
+// Revue #5 : bornes sécurité-critiques.
+
+void test_date_exactly_reached_is_unlock() {
+    // effectiveNow == openDate : ouvert. « Jamais AVANT la date » ≠ « pas À la date ».
+    // Verrouille le comportement du '<' contre une régression en '<='.
+    PolicyInput in = armed(5000);
+    in.config.hasDate = true;
+    in.config.openDate = 5000;
+    TEST_ASSERT_EQUAL_INT((int)PolicyState::Unlock, (int)decide(in).state);
+}
+
+void test_one_second_before_date_is_countdown() {
+    PolicyInput in = armed(4999);
+    in.config.hasDate = true;
+    in.config.openDate = 5000;
+    PolicyResult r = decide(in);
+    TEST_ASSERT_EQUAL_INT((int)PolicyState::Countdown, (int)r.state);
+    TEST_ASSERT_EQUAL_INT64(1, r.remainingSeconds);
+}
+
+void test_anomaly_takes_precedence_over_countdown() {
+    // Anomalie ET date future : l'anomalie prime (fail-closed), pas de rebours.
+    PolicyInput in = armed(1000);
+    in.config.hasDate = true;
+    in.config.openDate = 5000;
+    in.time.anomaly = true;
+    TEST_ASSERT_EQUAL_INT((int)PolicyState::Alert, (int)decide(in).state);
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_not_armed_is_setup);
@@ -127,5 +156,8 @@ int main(int, char**) {
     RUN_TEST(test_combined_date_met_then_password);
     RUN_TEST(test_combined_all_satisfied_is_unlock);
     RUN_TEST(test_armed_with_no_condition_is_unlock);
+    RUN_TEST(test_date_exactly_reached_is_unlock);
+    RUN_TEST(test_one_second_before_date_is_countdown);
+    RUN_TEST(test_anomaly_takes_precedence_over_countdown);
     return UNITY_END();
 }
