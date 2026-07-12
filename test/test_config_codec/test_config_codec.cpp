@@ -23,6 +23,7 @@ static StoredConfig sample() {
     c.rtcValid = true;
     c.wifiSsid = "MaBox";
     c.wifiPass = "p@ss word;=|";
+    c.themeId = 3; // Fête
     return c;
 }
 
@@ -49,6 +50,7 @@ void test_roundtrip_preserves_all_fields() {
     TEST_ASSERT_TRUE(out.rtcValid);
     TEST_ASSERT_EQUAL_STRING("MaBox", out.wifiSsid.c_str());
     TEST_ASSERT_EQUAL_STRING("p@ss word;=|", out.wifiPass.c_str());
+    TEST_ASSERT_EQUAL_UINT8(3, out.themeId);
 }
 
 void test_decode_rejects_wrong_magic() {
@@ -64,10 +66,22 @@ void test_decode_rejects_truncated() {
     TEST_ASSERT_FALSE(ConfigCodec::decode(blob, out));
 }
 
+// Rétro-compat : un blob sans l'octet de thème final se décode avec le thème par défaut.
+void test_decode_without_theme_defaults_to_zero() {
+    StoredConfig in = sample(); // themeId = 3
+    std::string blob = ConfigCodec::encode(in);
+    blob.resize(blob.size() - 1); // retire l'octet de thème (champ optionnel en fin)
+    StoredConfig out;
+    TEST_ASSERT_TRUE(ConfigCodec::decode(blob, out));
+    TEST_ASSERT_EQUAL_UINT8(0, out.themeId);
+    TEST_ASSERT_EQUAL_STRING("MaBox", out.wifiSsid.c_str()); // le reste intact
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_roundtrip_preserves_all_fields);
     RUN_TEST(test_decode_rejects_wrong_magic);
     RUN_TEST(test_decode_rejects_truncated);
+    RUN_TEST(test_decode_without_theme_defaults_to_zero);
     return UNITY_END();
 }

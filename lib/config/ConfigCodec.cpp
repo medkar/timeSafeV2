@@ -68,6 +68,7 @@ std::string ConfigCodec::encode(const StoredConfig& c) {
     putU8(s, c.rtcValid ? 1 : 0);
     putStr(s, c.wifiSsid);
     putStr(s, c.wifiPass);
+    putU8(s, c.themeId);
     return s;
 }
 
@@ -95,6 +96,14 @@ bool ConfigCodec::decode(const std::string& blob, StoredConfig& out) {
     if (!r.u8(b8)) return false; c.rtcValid = b8;
     if (!r.str(c.wifiSsid)) return false;
     if (!r.str(c.wifiPass)) return false;
+
+    // Champ optionnel en fin de blob (rétro-compat) : identifiant de thème.
+    // Un blob plus ancien sans cet octet se décode avec le thème par défaut (0).
+    if (r.pos < blob.size()) {
+        uint8_t tid;
+        if (!r.u8(tid)) return false;
+        c.themeId = tid;
+    }
 
     out = c;
     return true;

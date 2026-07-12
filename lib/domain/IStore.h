@@ -12,6 +12,7 @@ enum class PasswordType {
 // Ensemble complet des données persistantes (spec §7).
 struct StoredConfig {
     BoxConfig box;
+    uint8_t themeId = 0;             // thème d'affichage choisi (0 = Coffre) ; interprété côté UI
     PasswordType pwType = PasswordType::Pin;
     std::string salt;                // sel aléatoire (octets)
     std::string hash;                // sortie PBKDF2 (octets)
