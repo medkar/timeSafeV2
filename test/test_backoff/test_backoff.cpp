@@ -45,6 +45,18 @@ void test_reset_clears_state() {
     TEST_ASSERT_EQUAL_INT64(0, s.lockedUntil);
 }
 
+// Revue #3 : un maxShift énorme ne doit pas provoquer d'UB (shift dans le bit
+// de signe) ni d'overflow : plafond dur interne à 2^40.
+void test_huge_maxshift_is_bounded_no_ub() {
+    BackoffParams p;
+    p.baseSeconds = 1;
+    p.maxShift = 100; // volontairement absurde
+    AttemptState s;
+    s.failedCount = 50; // shift voulu = 49, mais plafonné au cap dur (40)
+    AttemptState next = registerFailure(s, 0, p);
+    TEST_ASSERT_EQUAL_INT64((int64_t)1 << 40, next.lockedUntil);
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_first_failure_uses_base_delay);
@@ -52,5 +64,6 @@ int main(int, char**) {
     RUN_TEST(test_delay_is_capped_at_max_shift);
     RUN_TEST(test_is_locked_out);
     RUN_TEST(test_reset_clears_state);
+    RUN_TEST(test_huge_maxshift_is_bounded_no_ub);
     return UNITY_END();
 }
