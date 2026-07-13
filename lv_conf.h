@@ -7,4 +7,4 @@
 #define LV_FONT_MONTSERRAT_28 0
 #define LV_FONT_MONTSERRAT_40 0
 #define LV_USE_OS 0
-#define LV_MEM_SIZE (48 * 1024)
+#define LV_MEM_SIZE (32 * 1024)

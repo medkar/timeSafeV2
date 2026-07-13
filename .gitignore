@@ -2,3 +2,6 @@
 # Build / IDE
 .pio/
 .vscode/
+
+# Secrets (identifiants WiFi) - jamais commite
+src/secrets.h
