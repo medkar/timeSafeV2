@@ -98,20 +98,10 @@ void setup() {
                       (int)r.present, (long long)r.epoch);
     }
 
-    // Config démo : capsule armée, ouverture 60 s après le boot.
-    StoredConfig cfg;
-    cfg.box.armed = true;
-    cfg.box.hasDate = true;
-    cfg.box.hasPassword = false;
-    cfg.themeId = 0;
-    time_t now = time(nullptr);
-    cfg.box.openDate = (int64_t)now + 60;
-    store.save(cfg);
-
+    // Pas de config armée -> la boîte démarre sur l'accueil (écran de configuration).
     app = new AppStateMachine(store, sysClock, rtcClock, servo, mono, hasher, ui);
     app->begin();
-    Serial.printf("Integration prete. now=%lld openDate=%lld\n",
-                  (long long)now, (long long)cfg.box.openDate);
+    Serial.printf("Accueil. now=%lld\n", (long long)time(nullptr));
 }
 
 void loop() {
