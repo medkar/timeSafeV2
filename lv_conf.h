@@ -5,5 +5,6 @@
 #define LV_TICK_CUSTOM 0
 #define LV_FONT_MONTSERRAT_14 1
 #define LV_FONT_MONTSERRAT_28 1
+#define LV_FONT_MONTSERRAT_40 1
 #define LV_USE_OS 0
 #define LV_MEM_SIZE (48 * 1024)
