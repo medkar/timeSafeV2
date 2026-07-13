@@ -24,6 +24,7 @@ private:
     PolicyInput buildInput(bool passwordSatisfied);
     void applyResult(const PolicyResult& r);
     void handlePasswordSubmit(const std::string& candidate);
+    void handleArm(const UiEvent& ev);
 
     IStore& store_;
     IClockSource& https_;

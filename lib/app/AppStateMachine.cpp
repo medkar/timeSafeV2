@@ -49,6 +49,23 @@ void AppStateMachine::handlePasswordSubmit(const std::string& candidate) {
     }
 }
 
+void AppStateMachine::handleArm(const UiEvent& ev) {
+    StoredConfig c = cfg_;              // conserve thème / wifi existants
+    c.box = ev.config;                  // date / mot de passe voulus
+    c.box.armed = true;
+    if (ev.config.hasPassword) {
+        c.salt = hasher_.randomSalt(16);
+        c.hash = hasher_.derive(ev.newPassword, c.salt, c.pbkdf2Iters);
+        c.pwType = PasswordType::Alnum;
+    }
+    c.attempts = resetAttempts();
+    store_.save(c);
+    cfg_ = c;
+    passwordSatisfied_ = false;
+    unlockedThisSession_ = false;
+    lock_.forceLock();                  // verrouille immédiatement à l'armement
+}
+
 void AppStateMachine::applyResult(const PolicyResult& r) {
     switch (r.state) {
         case PolicyState::Setup:       ui_.showSetup(); break;
@@ -71,8 +88,9 @@ void AppStateMachine::tick() {
     UiEvent ev = ui_.pollEvent();
     if (ev.type == UiEventType::PasswordSubmitted) {
         handlePasswordSubmit(ev.password);
+    } else if (ev.type == UiEventType::ArmRequested) {
+        handleArm(ev);
     }
-    // (ArmRequested / RearmRequested : gérés au Plan 3 avec l'UI complète.)
 
     // 2. Décider et agir.
     PolicyResult r = decide(buildInput(passwordSatisfied_));

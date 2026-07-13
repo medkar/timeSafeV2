@@ -159,8 +159,26 @@ void test_locked_out_ignores_password_attempt() {
     TEST_ASSERT_TRUE(f.ui.lastLockedOut);
 }
 
+void test_arm_request_arms_capsule() {
+    Fixture f;
+    f.build(); f.app->begin();               // démarre non armée
+    UiEvent e; e.type = UiEventType::ArmRequested;
+    e.config.armed = true; e.config.hasDate = true; e.config.openDate = 5000;
+    e.config.hasPassword = false;
+    f.ui.queue.push_back(e);
+    f.https.sample = {true, 1000};           // now(1000) < openDate(5000)
+    f.app->tick();
+    StoredConfig saved;
+    TEST_ASSERT_TRUE(f.store.load(saved));    // config persistée
+    TEST_ASSERT_TRUE(saved.box.armed);
+    TEST_ASSERT_EQUAL_INT64(5000, saved.box.openDate);
+    TEST_ASSERT_EQUAL_INT((int)PolicyState::Countdown, (int)f.ui.lastShown);
+    TEST_ASSERT_EQUAL_INT(2, f.lock.lockCalls); // begin + armement
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
+    RUN_TEST(test_arm_request_arms_capsule);
     RUN_TEST(test_begin_forces_lock);
     RUN_TEST(test_date_not_reached_shows_countdown_stays_locked);
     RUN_TEST(test_date_reached_unlocks);
