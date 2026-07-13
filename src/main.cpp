@@ -1,50 +1,39 @@
 #include <Arduino.h>
 #include <lvgl.h>
+#include <sys/time.h>
+#include <time.h>
+#include <cstring>
+#include <cstdio>
+#include <Wire.h>
+
 #include "hw/lv_port.h"
+#include "hw/ServoLock.h"
 #include "hw/WiFiProvisioner.h"
 #include "hw/HttpsTimeClient.h"
-#include <ThemeRegistry.h>
+#include "hw/SystemClock.h"
+#include "hw/RtcClock.h"
+#include "hw/StubHasher.h"
+#include "hw/MemStore.h"
+#include "hw/MonotonicClock.h"
+#include "ui/LvglUiView.h"
 #include "ui/ThemeStyle.h"
+#include "ui/Views.h"
+#include <ThemeRegistry.h>
+#include <AppStateMachine.h>
 #include "secrets.h"
-#include <sys/time.h>
-#include <cstring>
 
 using namespace tsafe;
 
-static WiFiProvisioner wifi;
-static HttpsTimeClient httpsTime("www.google.com");
-static lv_obj_t* lblStatus;
-static lv_obj_t* lblClock;
-static lv_obj_t* lblSrc;
-static int64_t   baseEpoch = 0;
-static uint32_t  baseMs = 0;
-static bool      haveTime = false;
-
-// epoch UTC -> "YYYY-MM-DD  HH:MM:SS UTC" (civil_from_days de Hinnant).
-static void fmtEpoch(int64_t epoch, char* out, size_t n) {
-    int64_t days = epoch / 86400;
-    int secs = (int)(epoch % 86400);
-    days += 719468;
-    int64_t era = (days >= 0 ? days : days - 146096) / 146097;
-    unsigned doe = (unsigned)(days - era * 146097);
-    unsigned yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
-    int y = (int)yoe + (int)era * 400;
-    unsigned doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    unsigned mp = (5 * doy + 2) / 153;
-    unsigned d = doy - (153 * mp + 2) / 5 + 1;
-    unsigned m = mp + (mp < 10 ? 3 : -9);
-    y += (m <= 2);
-    snprintf(out, n, "%04d-%02u-%02u  %02d:%02d:%02d UTC",
-             y, m, d, secs / 3600, (secs % 3600) / 60, secs % 60);
-}
-
-static void tick(lv_timer_t*) {
-    if (!haveTime) return;
-    int64_t now = baseEpoch + (int64_t)((millis() - baseMs) / 1000);
-    char b[40];
-    fmtEpoch(now, b, sizeof(b));
-    lv_label_set_text(lblClock, b);
-}
+static WiFiProvisioner  wifi;
+static HttpsTimeClient  httpsBoot("www.google.com");
+static SystemClock      sysClock;
+static RtcClock         rtcClock;    // DS3231 (HW-111) sur Wire1 (GPIO16/17)
+static ServoLock        servo(13, 0, 90);
+static MonotonicClock   mono;
+static StubHasher       hasher;
+static MemStore         store;
+static LvglUiView       ui(0);       // thème Coffre
+static AppStateMachine* app = nullptr;
 
 static int64_t civilToEpoch(int y, unsigned mo, unsigned d, int h, int mi, int s) {
     y -= mo <= 2;
@@ -56,9 +45,7 @@ static int64_t civilToEpoch(int y, unsigned mo, unsigned d, int h, int mi, int s
     return days * 86400 + (int64_t)h * 3600 + mi * 60 + s;
 }
 
-// Plancher temporel = date de compilation. Résout le paradoxe : mbedTLS a besoin
-// d'une heure pour valider le certificat épinglé, or c'est justement ce qu'on
-// cherche. Le temps réel étant toujours >= date de build, on l'utilise comme base.
+// Plancher horloge = date de build (pour valider le certificat épinglé).
 static void setClockFloor() {
     char mon[4] = {0};
     int d = 1, y = 2026, h = 0, mi = 0, s = 0;
@@ -79,46 +66,60 @@ static void setClockFloor() {
 void setup() {
     Serial.begin(115200);
     lvport_init();
-    setClockFloor();   // base horloge = date de build (pour valider le cert épinglé)
+    setClockFloor();
 
-    const Theme& t = themeById(0);
-    lv_obj_t* scr = lv_screen_active();
-    themeApplyBg(scr, t);
+    // Écran de synchro pendant la connexion.
+    viewSync(lv_screen_active(), themeById(0));
+    lv_timer_handler();
 
-    lblStatus = themeLabel(scr, "Connexion WiFi...", t.palette.muted, 14);
-    lv_obj_align(lblStatus, LV_ALIGN_TOP_MID, 0, 26);
-    lblClock = themeLabel(scr, "--:--:--", t.palette.accent, 28, 1);
-    lv_obj_align(lblClock, LV_ALIGN_CENTER, 0, 0);
-    lblSrc = themeLabel(scr, "heure de confiance", t.palette.muted, 14);
-    lv_obj_align(lblSrc, LV_ALIGN_BOTTOM_MID, 0, -16);
-    lv_timer_handler();   // peindre l'état initial
+    servo.begin();                          // attache + verrouille (fail-closed)
+    bool rtcOk = rtcClock.begin(32, 19);    // RTC sur bus I²C dédié (Wire1) : SDA=32, SCL=19
 
-    if (wifi.connect(WIFI_SSID, WIFI_PASS)) {
-        char s[72];
-        snprintf(s, sizeof(s), "WiFi OK  -  %s", wifi.ip().c_str());
-        lv_label_set_text(lblStatus, s);
+    Serial.print("I2C scan Wire1:");        // diagnostic
+    for (uint8_t a = 1; a < 127; ++a) {
+        Wire1.beginTransmission(a);
+        if (Wire1.endTransmission() == 0) Serial.printf(" 0x%02X", a);
+    }
+    Serial.println();
 
-        TimeSample ts = httpsTime.read();
-        if (ts.present) {
-            baseEpoch = ts.epoch;
-            baseMs = millis();
-            haveTime = true;
-            struct timeval tv = { (time_t)ts.epoch, 0 };
-            settimeofday(&tv, nullptr);   // cale l'horloge sur l'heure validée
-            lv_label_set_text(lblSrc, "source : www.google.com  (HTTPS epingle GTS Root R1)");
-            Serial.printf("epoch=%lld (epingle)\n", (long long)ts.epoch);
-        } else {
-            lv_label_set_text(lblClock, "echec heure (cert refuse ?)");
-        }
-    } else {
-        lv_label_set_text(lblStatus, "WiFi : echec (verifie src/secrets.h)");
+    wifi.connect(WIFI_SSID, WIFI_PASS);
+
+    TimeSample ts = httpsBoot.read();        // heure de confiance épinglée
+    if (ts.present) {
+        struct timeval tv = { (time_t)ts.epoch, 0 };
+        settimeofday(&tv, nullptr);          // cale l'horloge système
+        sysClock.synced = true;
+        rtcClock.setUtc(ts.epoch);           // synchronise le RTC depuis HTTPS
+    }
+    Serial.printf("RTC detecte=%d osf=%d\n", (int)rtcOk, (int)rtcClock.lostPower());
+    {
+        TimeSample r = rtcClock.read();
+        Serial.printf("RTC read present=%d epoch=%lld\n",
+                      (int)r.present, (long long)r.epoch);
     }
 
-    lv_timer_create(tick, 1000, nullptr);
-    Serial.println("Test WiFi + heure pret");
+    // Config démo : capsule armée, ouverture 60 s après le boot.
+    StoredConfig cfg;
+    cfg.box.armed = true;
+    cfg.box.hasDate = true;
+    cfg.box.hasPassword = false;
+    cfg.themeId = 0;
+    time_t now = time(nullptr);
+    cfg.box.openDate = (int64_t)now + 60;
+    store.save(cfg);
+
+    app = new AppStateMachine(store, sysClock, rtcClock, servo, mono, hasher, ui);
+    app->begin();
+    Serial.printf("Integration prete. now=%lld openDate=%lld\n",
+                  (long long)now, (long long)cfg.box.openDate);
 }
 
 void loop() {
+    static uint32_t last = 0;
+    if (millis() - last >= 500) {   // évaluer la politique 2x/s
+        last = millis();
+        if (app) app->tick();
+    }
     lvport_loop();
     delay(5);
 }
