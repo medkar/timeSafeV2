@@ -3,6 +3,7 @@
 #include <IUiView.h>
 #include <Domain.h>
 #include <string>
+#include <functional>
 
 namespace tsafe {
 
@@ -15,10 +16,16 @@ public:
     explicit LvglUiView(uint8_t themeId);
 
     void setTheme(uint8_t id);   // applique un thème (ex. celui relu depuis la NVS au boot)
+    void ensureStatusBar();      // crée (une fois) la barre heure+WiFi sur la couche haute
+    void updateStatusBar();      // rafraîchit heure + état WiFi
+
+    // Handler appelé quand l'utilisateur valide un WiFi (SSID, mot de passe) :
+    // main y persiste les identifiants en NVS et redémarre pour se reconnecter.
+    void setWifiConfigHandler(std::function<void(const std::string&, const std::string&)> h);
 
     void showSetup() override;
     void showWaitingSync() override;
-    void showCountdown(int64_t remainingSeconds) override;
+    void showCountdown(int64_t remainingSeconds, int64_t openDate) override;
     void showAskPassword(bool lockedOut, int64_t retryInSeconds, bool pin) override;
     void showUnlocked() override;
     void showAlert() override;
@@ -36,7 +43,16 @@ private:
     void buildPwChoose();                                   // choix PIN / mot de passe
     void buildPassword(const char* title, bool forUnlock, bool isPin);
     void buildPinPad(lv_obj_t* scr);                        // pavé numérique 0-9
-    void addBackButton();                                   // « Retour » -> menu
+    void addBackButton(lv_event_cb_t cb = onBackCb);        // « Retour »
+
+    // Configuration WiFi (écran modal accessible pendant le verrouillage)
+    void addWifiButton();                                   // bouton « WiFi » sur écrans verrouillés
+    void openWifi();
+    void closeWifi();
+    void buildWifiScan();                                   // scan + liste des réseaux
+    void buildWifiPass();                                   // clavier mot de passe WiFi
+    void wifiPick(lv_event_t* e);                           // réseau choisi -> saisie mdp
+    void wifiPassReady();                                   // valider -> handler (save + reboot)
 
     // Actions déclenchées par le tactile
     void cycleTheme();
@@ -65,6 +81,11 @@ private:
     static void onKbReadyCb(lv_event_t* e);
     static void onKbCancelCb(lv_event_t* e);
     static void onPinKeyCb(lv_event_t* e);
+    static void onWifiBtnCb(lv_event_t* e);
+    static void onWifiPickCb(lv_event_t* e);
+    static void onWifiPassReadyCb(lv_event_t* e);
+    static void onWifiBackCb(lv_event_t* e);
+    static void onStatusTimerCb(lv_timer_t* tm);
 
     uint8_t themeId_;
     int cur_ = -1;                 // PolicyState affiché (-1 = aucun)
@@ -88,6 +109,7 @@ private:
     // Compte à rebours
     lv_obj_t* nD_ = nullptr; lv_obj_t* nH_ = nullptr;
     lv_obj_t* nM_ = nullptr; lv_obj_t* nS_ = nullptr;
+    lv_obj_t* openLbl_ = nullptr;   // date/heure d'ouverture, sous le rebours
 
     // Éditeur de date
     lv_obj_t* rDay_ = nullptr;  lv_obj_t* rMon_ = nullptr; lv_obj_t* rYear_ = nullptr;
@@ -96,6 +118,17 @@ private:
     // Saisie mot de passe (setup ou déverrouillage)
     lv_obj_t* kb_ = nullptr; lv_obj_t* ta_ = nullptr; lv_obj_t* pwStatus_ = nullptr;
     bool kbForUnlock_ = false;
+
+    // Configuration WiFi
+    bool modalWifi_ = false;     // écran WiFi ouvert : gèle l'affichage piloté par l'état
+    std::string wifiSsid_;       // réseau choisi (avant saisie du mot de passe)
+    std::function<void(const std::string&, const std::string&)> onWifiConfig_;
+
+    // Barre d'état (heure + WiFi) sur la couche supérieure -> persiste entre écrans.
+    lv_obj_t* statusBar_ = nullptr;
+    lv_obj_t* statusTime_ = nullptr;
+    lv_obj_t* statusWifi_ = nullptr;
+    lv_timer_t* statusTimer_ = nullptr;
 };
 
 } // namespace tsafe

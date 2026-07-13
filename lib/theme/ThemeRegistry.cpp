@@ -12,7 +12,7 @@ static const Theme kThemes[] = {
         ThemeFont::Mono,
         {
             "Ouverture dans",
-            "Cible + statut des sources",
+            "Verrouillage temporel actif",
             "Armer la boîte",
             "Saisie du code",
             "Déverrouillée",

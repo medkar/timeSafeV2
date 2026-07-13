@@ -4,6 +4,7 @@
 #include <ThemeRegistry.h>
 #include <Domain.h>
 #include <LocalTime.h>
+#include <WiFi.h>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -85,6 +86,8 @@ void LvglUiView::buildMenu() {
                      : (pwTypePin_ ? "code PIN" : "mot de passe");
     snprintf(buf, sizeof(buf), "Protection : %s", prot);
     themedButton(col, t, buf, false, onProtectCb, this);
+
+    themedButton(col, t, "WiFi  (configurer)", false, onWifiBtnCb, this);
 
     bool ready = draft_.hasDate || draft_.hasPassword;
     if (ready) {
@@ -192,6 +195,35 @@ void LvglUiView::buildDateEdit() {
     addBackButton();
 }
 
+// Passe un lv_keyboard en AZERTY : on surcharge les cartes minuscule/majuscule
+// (les modes chiffres « 1# » gardent la carte par défaut). Les chaînes "abc"/"ABC"/
+// "1#" et les symboles sont ceux que le gestionnaire interne de lv_keyboard
+// reconnaît (bascule de casse / mode, OK, effacer, fermer).
+static void applyAzerty(lv_obj_t* kb) {
+    static const char* const lower[] = {
+        "a","z","e","r","t","y","u","i","o","p", LV_SYMBOL_BACKSPACE, "\n",
+        "q","s","d","f","g","h","j","k","l","m", "\n",
+        "ABC","w","x","c","v","b","n","'","-", "\n",
+        "1#", LV_SYMBOL_KEYBOARD, " ", LV_SYMBOL_OK, ""
+    };
+    static const char* const upper[] = {
+        "A","Z","E","R","T","Y","U","I","O","P", LV_SYMBOL_BACKSPACE, "\n",
+        "Q","S","D","F","G","H","J","K","L","M", "\n",
+        "abc","W","X","C","V","B","N","'","-", "\n",
+        "1#", LV_SYMBOL_KEYBOARD, " ", LV_SYMBOL_OK, ""
+    };
+#define KC(x) static_cast<lv_buttonmatrix_ctrl_t>(x)   // enum en C++ : cast explicite
+    static const lv_buttonmatrix_ctrl_t ctrl[] = {
+        KC(1),KC(1),KC(1),KC(1),KC(1),KC(1),KC(1),KC(1),KC(1),KC(1), KC(LV_BUTTONMATRIX_CTRL_CHECKED | 2),
+        KC(1),KC(1),KC(1),KC(1),KC(1),KC(1),KC(1),KC(1),KC(1),KC(1),
+        KC(LV_KEYBOARD_CTRL_BUTTON_FLAGS | 2), KC(1),KC(1),KC(1),KC(1),KC(1),KC(1), KC(1), KC(1),
+        KC(LV_KEYBOARD_CTRL_BUTTON_FLAGS | 2), KC(LV_KEYBOARD_CTRL_BUTTON_FLAGS | 2), KC(6), KC(LV_KEYBOARD_CTRL_BUTTON_FLAGS | 2)
+    };
+#undef KC
+    lv_keyboard_set_map(kb, LV_KEYBOARD_MODE_TEXT_LOWER, lower, ctrl);
+    lv_keyboard_set_map(kb, LV_KEYBOARD_MODE_TEXT_UPPER, upper, ctrl);
+}
+
 // ---------- Saisie (clavier texte OU pavé PIN, setup ou déverrouillage) ----------
 void LvglUiView::buildPassword(const char* title, bool forUnlock, bool isPin) {
     kbForUnlock_ = forUnlock;
@@ -231,6 +263,7 @@ void LvglUiView::buildPassword(const char* title, bool forUnlock, bool isPin) {
         buildPinPad(scr);
     } else {
         kb_ = lv_keyboard_create(scr);
+        applyAzerty(kb_);
         lv_keyboard_set_mode(kb_, LV_KEYBOARD_MODE_TEXT_LOWER);
         lv_keyboard_set_textarea(kb_, ta_);
         lv_obj_add_event_cb(kb_, onKbReadyCb, LV_EVENT_READY, this);
@@ -267,9 +300,9 @@ void LvglUiView::buildPinPad(lv_obj_t* scr) {
     lv_obj_add_event_cb(bm, onPinKeyCb, LV_EVENT_VALUE_CHANGED, this);
 }
 
-// Bouton « Retour » constant en haut à gauche -> revient au menu de config.
-// Texte simple (pas de symbole : la police FR n'a pas la flèche) et sans bordure.
-void LvglUiView::addBackButton() {
+// Bouton « Retour » constant en haut à gauche. Texte simple (pas de symbole :
+// la police FR n'a pas la flèche) et sans bordure. cb par défaut -> menu de config.
+void LvglUiView::addBackButton(lv_event_cb_t cb) {
     const Theme& t = themeById(themeId_);
     lv_obj_t* scr = lv_screen_active();
     lv_obj_t* back = lv_button_create(scr);
@@ -285,7 +318,139 @@ void LvglUiView::addBackButton() {
     lv_obj_set_style_text_font(l, themeFont(14), 0);
     lv_obj_set_style_text_color(l, lv_color_hex(t.palette.accent), 0);
     lv_obj_center(l);
-    lv_obj_add_event_cb(back, onBackCb, LV_EVENT_CLICKED, this);
+    lv_obj_add_event_cb(back, cb, LV_EVENT_CLICKED, this);
+}
+
+// ---------- Configuration WiFi (modale, pendant le verrouillage) ----------
+void LvglUiView::setWifiConfigHandler(std::function<void(const std::string&, const std::string&)> h) {
+    onWifiConfig_ = std::move(h);
+}
+
+// Bouton « WiFi » en bas à gauche des écrans verrouillés. Même style que Retour :
+// texte simple (pas de symbole absent de la police FR), sans bordure, en accent.
+void LvglUiView::addWifiButton() {
+    const Theme& t = themeById(themeId_);
+    lv_obj_t* scr = lv_screen_active();
+    lv_obj_t* b = lv_button_create(scr);
+    lv_obj_set_height(b, LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_opa(b, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(b, 0, 0);
+    lv_obj_set_style_shadow_width(b, 0, 0);
+    lv_obj_set_style_pad_hor(b, 10, 0);
+    lv_obj_set_style_pad_ver(b, 8, 0);
+    lv_obj_align(b, LV_ALIGN_BOTTOM_LEFT, 6, -6);
+    lv_obj_t* l = lv_label_create(b);
+    lv_label_set_text(l, "WiFi");
+    lv_obj_set_style_text_font(l, themeFont(14), 0);
+    lv_obj_set_style_text_color(l, lv_color_hex(t.palette.accent), 0);
+    lv_obj_center(l);
+    lv_obj_add_event_cb(b, onWifiBtnCb, LV_EVENT_CLICKED, this);
+}
+
+void LvglUiView::openWifi() { modalWifi_ = true; buildWifiScan(); }
+
+void LvglUiView::closeWifi() {
+    modalWifi_ = false;
+    if (cur_ == (int)PolicyState::Setup) {
+        rebuildSetup();      // repeint le menu SANS réinitialiser le brouillon en cours
+    } else {
+        cur_ = -1;           // autres écrans : repeints par la machine à états au prochain tick
+    }
+}
+
+void LvglUiView::buildWifiScan() {
+    const Theme& t = themeById(themeId_);
+    lv_obj_t* scr = lv_screen_active();
+    lv_obj_clean(scr);
+    themeApplyBg(scr, t);
+
+    lv_obj_t* ttl = themeLabel(scr, "RESEAUX WIFI", t.palette.muted, 14, 2);
+    lv_obj_align(ttl, LV_ALIGN_TOP_MID, 0, 8);
+    lv_obj_t* info = themeLabel(scr, "Recherche...", t.palette.muted, 14);
+    lv_obj_align(info, LV_ALIGN_CENTER, 0, 0);
+    lv_refr_now(NULL);                          // affiche "Recherche..." avant le scan bloquant
+
+    WiFi.mode(WIFI_STA);
+    int n = WiFi.scanNetworks();
+    lv_obj_delete(info);
+
+    lv_obj_t* list = lv_list_create(scr);
+    lv_obj_set_size(list, 452, 218);
+    lv_obj_align(list, LV_ALIGN_TOP_MID, 0, 46);      // sous le titre + bouton Retour
+    lv_obj_set_style_bg_color(list, lv_color_hex(t.palette.bg), 0);
+    lv_obj_set_style_border_color(list, lv_color_hex(t.palette.line), 0);
+    lv_obj_set_style_text_font(list, themeFont(14), 0);
+
+    if (n <= 0) {
+        lv_list_add_text(list, "Aucun reseau trouve");
+    } else {
+        int shown = 0;
+        for (int i = 0; i < n && shown < 15; ++i) {
+            if (WiFi.SSID(i).length() == 0) continue;      // ignore SSID cachés/vides
+            lv_obj_t* it = lv_list_add_button(list, LV_SYMBOL_WIFI, WiFi.SSID(i).c_str());
+            lv_obj_set_style_text_color(it, lv_color_hex(t.palette.text), 0);
+            lv_obj_add_event_cb(it, onWifiPickCb, LV_EVENT_CLICKED, this);
+            ++shown;
+        }
+    }
+    WiFi.scanDelete();
+    addBackButton(onWifiBackCb);                // Retour -> ferme la modale
+}
+
+void LvglUiView::wifiPick(lv_event_t* e) {
+    lv_obj_t* btn = (lv_obj_t*)lv_event_get_target(e);
+    lv_obj_t* list = lv_obj_get_parent(btn);
+    const char* ssid = lv_list_get_button_text(list, btn);
+    wifiSsid_ = ssid ? ssid : "";
+    buildWifiPass();
+}
+
+void LvglUiView::buildWifiPass() {
+    const Theme& t = themeById(themeId_);
+    lv_obj_t* scr = lv_screen_active();
+    lv_obj_clean(scr);
+    themeApplyBg(scr, t);
+
+    char title[80];
+    snprintf(title, sizeof(title), "MOT DE PASSE : %s", wifiSsid_.c_str());
+    lv_obj_t* ttl = themeLabel(scr, title, t.palette.muted, 14, 1);
+    lv_obj_align(ttl, LV_ALIGN_TOP_MID, 0, 8);
+
+    ta_ = lv_textarea_create(scr);
+    lv_textarea_set_one_line(ta_, true);
+    lv_textarea_set_max_length(ta_, 63);        // WiFi visible (réduit les fautes de frappe)
+    lv_obj_set_width(ta_, 360);
+    lv_obj_align(ta_, LV_ALIGN_TOP_MID, 0, 44);       // sous le bouton Retour
+    lv_obj_set_style_text_font(ta_, themeFont(14), 0);
+    lv_obj_set_style_bg_color(ta_, lv_color_hex(t.palette.bg), 0);
+    lv_obj_set_style_text_color(ta_, lv_color_hex(t.palette.accent), 0);
+    lv_obj_set_style_border_color(ta_, lv_color_hex(t.palette.accent), 0);
+    lv_obj_set_style_border_opa(ta_, LV_OPA_50, 0);
+
+    kb_ = lv_keyboard_create(scr);
+    applyAzerty(kb_);
+    lv_keyboard_set_mode(kb_, LV_KEYBOARD_MODE_TEXT_LOWER);
+    lv_keyboard_set_textarea(kb_, ta_);
+    lv_obj_add_event_cb(kb_, onWifiPassReadyCb, LV_EVENT_READY, this);
+    lv_obj_add_event_cb(kb_, onWifiBackCb, LV_EVENT_CANCEL, this);   // ✕ -> ferme la modale
+
+    addBackButton(onWifiBackCb);        // bouton Retour explicite (ferme la config WiFi)
+}
+
+void LvglUiView::wifiPassReady() {
+    const char* txt = lv_textarea_get_text(ta_);
+    std::string pass = txt ? txt : "";
+
+    lv_obj_t* scr = lv_screen_active();
+    lv_obj_clean(scr);
+    const Theme& t = themeById(themeId_);
+    themeApplyBg(scr, t);
+    lv_obj_t* l = themeLabel(scr, "Connexion...", t.palette.accent, 28, 1);
+    lv_obj_center(l);
+    lv_refr_now(NULL);
+
+    if (onWifiConfig_) onWifiConfig_(wifiSsid_, pass);   // main : persiste + reconnecte (bloquant)
+    closeWifi();                                         // referme la modale, repeint l'écran
 }
 
 // ---------- Aiguillage des sous-pages Setup ----------
@@ -322,7 +487,53 @@ void LvglUiView::cycleTheme() {
 
 void LvglUiView::setTheme(uint8_t id) {
     themeId_ = (uint8_t)(id % themeCount());
+    if (statusBar_) updateStatusBar();
     if (cur_ == (int)PolicyState::Setup) rebuildSetup();   // rafraîchit si déjà à l'écran
+}
+
+// ---------- Barre d'état (heure + WiFi) ----------
+// Placée sur la couche supérieure (lv_layer_top) : lv_obj_clean de l'écran actif
+// ne la détruit pas, donc elle reste visible sur l'accueil et les écrans verrouillés.
+void LvglUiView::ensureStatusBar() {
+    if (statusBar_) return;
+    lv_obj_t* top = lv_layer_top();
+    statusBar_ = lv_obj_create(top);
+    lv_obj_remove_style_all(statusBar_);
+    lv_obj_clear_flag(statusBar_, LV_OBJ_FLAG_CLICKABLE);   // laisse passer le tactile en dessous
+    lv_obj_set_size(statusBar_, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(statusBar_, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(statusBar_, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(statusBar_, 8, 0);
+    lv_obj_align(statusBar_, LV_ALIGN_TOP_RIGHT, -10, 8);
+
+    // Police par défaut (Montserrat) : contient les chiffres ET le symbole WiFi.
+    statusTime_ = lv_label_create(statusBar_);
+    lv_obj_set_style_text_font(statusTime_, &lv_font_montserrat_14, 0);
+    statusWifi_ = lv_label_create(statusBar_);
+    lv_obj_set_style_text_font(statusWifi_, &lv_font_montserrat_14, 0);
+    lv_label_set_text(statusWifi_, LV_SYMBOL_WIFI);
+
+    statusTimer_ = lv_timer_create(onStatusTimerCb, 5000, this);   // rafraîchit toutes les 5 s
+    updateStatusBar();
+}
+
+void LvglUiView::updateStatusBar() {
+    if (!statusTime_) return;
+    const Theme& t = themeById(themeId_);
+
+    int y, mo, d, h, mi;
+    epochToParisLocal((int64_t)time(nullptr), y, mo, d, h, mi);
+    char b[8];
+    snprintf(b, sizeof(b), "%02d:%02d", h, mi);
+    lv_label_set_text(statusTime_, b);
+    lv_obj_set_style_text_color(statusTime_, lv_color_hex(t.palette.muted), 0);
+
+    bool conn = (WiFi.status() == WL_CONNECTED);      // accent si connecté, atténué sinon
+    lv_obj_set_style_text_color(statusWifi_, lv_color_hex(conn ? t.palette.accent : t.palette.line), 0);
+}
+
+void LvglUiView::onStatusTimerCb(lv_timer_t* tm) {
+    static_cast<LvglUiView*>(lv_timer_get_user_data(tm))->updateStatusBar();
 }
 void LvglUiView::backToMenu()   { setupPage_ = SetupPage::Menu;     rebuildSetup(); }
 void LvglUiView::openDateEdit() { setupPage_ = SetupPage::DateEdit; rebuildSetup(); }
@@ -460,6 +671,10 @@ void LvglUiView::onDateOkCb(lv_event_t* e)      { static_cast<LvglUiView*>(lv_ev
 void LvglUiView::onKbReadyCb(lv_event_t* e)     { static_cast<LvglUiView*>(lv_event_get_user_data(e))->kbReady(); }
 void LvglUiView::onKbCancelCb(lv_event_t* e)    { static_cast<LvglUiView*>(lv_event_get_user_data(e))->kbCancel(); }
 void LvglUiView::onPinKeyCb(lv_event_t* e)      { static_cast<LvglUiView*>(lv_event_get_user_data(e))->pinKey(e); }
+void LvglUiView::onWifiBtnCb(lv_event_t* e)     { static_cast<LvglUiView*>(lv_event_get_user_data(e))->openWifi(); }
+void LvglUiView::onWifiPickCb(lv_event_t* e)    { static_cast<LvglUiView*>(lv_event_get_user_data(e))->wifiPick(e); }
+void LvglUiView::onWifiPassReadyCb(lv_event_t* e){ static_cast<LvglUiView*>(lv_event_get_user_data(e))->wifiPassReady(); }
+void LvglUiView::onWifiBackCb(lv_event_t* e)    { static_cast<LvglUiView*>(lv_event_get_user_data(e))->closeWifi(); }
 
 LvglUiView::LvglUiView(uint8_t themeId) : themeId_(themeId) {}
 
@@ -489,15 +704,30 @@ void LvglUiView::buildCountdown() {
         themeLabel(c, units[i], t.palette.muted, 14);
     }
 
+    // Date/heure d'ouverture (en petit) sous le rebours.
+    openLbl_ = themeLabel(scr, "", t.palette.muted, 14);
+    lv_obj_align(openLbl_, LV_ALIGN_CENTER, 0, 55);
+
     lv_obj_t* foot = themeLabel(scr, t.wording.countdownFoot, t.palette.muted, 14);
     lv_obj_align(foot, LV_ALIGN_BOTTOM_MID, 0, -14);
+
+    addWifiButton();                 // config WiFi possible pendant le rebours
 }
 
-void LvglUiView::showCountdown(int64_t remainingSeconds) {
+void LvglUiView::showCountdown(int64_t remainingSeconds, int64_t openDate) {
+    ensureStatusBar();
+    if (modalWifi_) return;          // écran WiFi ouvert : ne pas repeindre
     if (cur_ != (int)PolicyState::Countdown) {
         lv_obj_clean(lv_screen_active());
         buildCountdown();
         cur_ = (int)PolicyState::Countdown;
+    }
+    if (openLbl_) {                  // date d'ouverture (constante), en heure de Paris
+        int y, mo, d, h, mi;
+        epochToParisLocal(openDate, y, mo, d, h, mi);
+        char ob[48];
+        snprintf(ob, sizeof(ob), "Ouverture le %02d.%02d.%04d à %02d:%02d", d, mo, y, h, mi);
+        lv_label_set_text(openLbl_, ob);
     }
     int64_t r = remainingSeconds < 0 ? 0 : remainingSeconds;
     int d = (int)(r / 86400); r %= 86400;
@@ -513,6 +743,8 @@ void LvglUiView::showCountdown(int64_t remainingSeconds) {
 
 // ---------- États pilotés par la machine à états ----------
 void LvglUiView::showSetup() {
+    ensureStatusBar();
+    if (modalWifi_) return;
     if (cur_ == (int)PolicyState::Setup) return;
     setupPage_ = SetupPage::Menu;
     draft_ = BoxConfig{};                 // nouvelle session de configuration
@@ -524,13 +756,18 @@ void LvglUiView::showSetup() {
 }
 
 void LvglUiView::showWaitingSync() {
+    ensureStatusBar();
+    if (modalWifi_) return;
     if (cur_ == (int)PolicyState::WaitingSync) return;
     lv_obj_clean(lv_screen_active());
     viewSync(lv_screen_active(), themeById(themeId_));
+    addWifiButton();                 // ajouter un WiFi permet d'obtenir l'heure de confiance
     cur_ = (int)PolicyState::WaitingSync;
 }
 
 void LvglUiView::showAskPassword(bool lockedOut, int64_t retryInSeconds, bool pin) {
+    ensureStatusBar();
+    if (modalWifi_) return;
     if (cur_ != (int)PolicyState::AskPassword) {
         lv_obj_clean(lv_screen_active());
         buildPassword(themeById(themeId_).wording.passwordTitle, /*forUnlock=*/true, /*isPin=*/pin);
@@ -540,6 +777,8 @@ void LvglUiView::showAskPassword(bool lockedOut, int64_t retryInSeconds, bool pi
 }
 
 void LvglUiView::showUnlocked() {
+    ensureStatusBar();
+    if (modalWifi_) return;
     if (cur_ == (int)PolicyState::Unlock) return;
     lv_obj_t* scr = lv_screen_active();
     lv_obj_clean(scr);
@@ -557,10 +796,15 @@ void LvglUiView::showUnlocked() {
     lv_obj_add_flag(tap, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(tap, onRearmCb, LV_EVENT_CLICKED, this);
 
+    // Bouton WiFi AU-DESSUS du calque : le taper ouvre la config (les taps ailleurs
+    // tombent sur le calque -> désarmement).
+    addWifiButton();
+
     cur_ = (int)PolicyState::Unlock;
 }
 
 void LvglUiView::showAlert() {
+    if (modalWifi_) return;
     if (cur_ == (int)PolicyState::Alert) return;
     lv_obj_clean(lv_screen_active());
     viewAlert(lv_screen_active(), themeById(themeId_));

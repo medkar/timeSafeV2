@@ -42,7 +42,7 @@ public:
     std::vector<UiEvent> queue; size_t idx = 0;
     void showSetup() override { lastShown = PolicyState::Setup; }
     void showWaitingSync() override { lastShown = PolicyState::WaitingSync; }
-    void showCountdown(int64_t r) override { lastShown = PolicyState::Countdown; lastRemaining = r; }
+    void showCountdown(int64_t r, int64_t) override { lastShown = PolicyState::Countdown; lastRemaining = r; }
     void showAskPassword(bool lo, int64_t, bool pin) override { lastShown = PolicyState::AskPassword; lastLockedOut = lo; lastPin = pin; }
     void showUnlocked() override { lastShown = PolicyState::Unlock; }
     void showAlert() override { lastShown = PolicyState::Alert; }

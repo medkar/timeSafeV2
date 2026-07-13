@@ -4,6 +4,7 @@
 #include <time.h>
 #include <cstring>
 #include <cstdio>
+#include <string>
 #include <Wire.h>
 
 #include "hw/lv_port.h"
@@ -63,6 +64,21 @@ static void setClockFloor() {
     }
 }
 
+// Connexion WiFi + heure de confiance (HTTPS épinglé) -> cale l'horloge système
+// et le RTC. Appelée au boot et lors d'une (re)configuration WiFi à chaud.
+static bool syncTimeOverWifi(const char* ssid, const char* pass) {
+    wifi.connect(ssid, pass);
+    TimeSample ts = httpsBoot.read();
+    if (ts.present) {
+        struct timeval tv = { (time_t)ts.epoch, 0 };
+        settimeofday(&tv, nullptr);
+        sysClock.synced = true;
+        rtcClock.setUtc(ts.epoch);
+        return true;
+    }
+    return false;
+}
+
 void setup() {
     Serial.begin(115200);
     Serial.printf("PBKDF2 self-test %s\n",
@@ -84,33 +100,50 @@ void setup() {
     }
     Serial.println();
 
-    wifi.connect(WIFI_SSID, WIFI_PASS);
-
-    TimeSample ts = httpsBoot.read();        // heure de confiance épinglée
-    if (ts.present) {
-        struct timeval tv = { (time_t)ts.epoch, 0 };
-        settimeofday(&tv, nullptr);          // cale l'horloge système
-        sysClock.synced = true;
-        rtcClock.setUtc(ts.epoch);           // synchronise le RTC depuis HTTPS
+    // NVS d'abord : ses identifiants WiFi (prioritaires sur secrets.h) + le thème.
+    bool nvsOk = store.begin();
+    std::string wifiSsid = WIFI_SSID, wifiPass = WIFI_PASS;
+    {
+        StoredConfig probe;
+        bool had = store.load(probe);
+        if (had) {
+            ui.setTheme(probe.themeId);          // restaure le thème choisi
+            if (!probe.wifiSsid.empty()) {       // WiFi configuré à l'écran ?
+                wifiSsid = probe.wifiSsid;
+                wifiPass = probe.wifiPass;
+            }
+        }
+        Serial.printf("NVS begin=%d had=%d armed=%d hasDate=%d hasPwd=%d theme=%d openDate=%lld ssid=%s\n",
+                      (int)nvsOk, (int)had, (int)probe.box.armed, (int)probe.box.hasDate,
+                      (int)probe.box.hasPassword, (int)probe.themeId,
+                      (long long)probe.box.openDate, wifiSsid.c_str());
     }
+
+    syncTimeOverWifi(wifiSsid.c_str(), wifiPass.c_str());   // connexion + heure de confiance
+
     Serial.printf("RTC detecte=%d osf=%d\n", (int)rtcOk, (int)rtcClock.lostPower());
     {
         TimeSample r = rtcClock.read();
         Serial.printf("RTC read present=%d epoch=%lld\n",
                       (int)r.present, (long long)r.epoch);
+        // Pas d'HTTPS : cale l'horloge système sur le RTC pour l'AFFICHAGE (l'heure
+        // reste juste hors-ligne). sysClock.synced reste faux -> sécurité inchangée.
+        if (!sysClock.synced && r.present) {
+            struct timeval tv = { (time_t)r.epoch, 0 };
+            settimeofday(&tv, nullptr);
+        }
     }
 
-    // Ouvre la NVS et diagnostique ce qui a survécu à la dernière coupure.
-    bool nvsOk = store.begin();
-    {
-        StoredConfig probe;
-        bool had = store.load(probe);
-        if (had) ui.setTheme(probe.themeId);      // restaure le thème choisi
-        Serial.printf("NVS begin=%d had=%d armed=%d hasDate=%d hasPwd=%d theme=%d openDate=%lld\n",
-                      (int)nvsOk, (int)had, (int)probe.box.armed,
-                      (int)probe.box.hasDate, (int)probe.box.hasPassword,
-                      (int)probe.themeId, (long long)probe.box.openDate);
-    }
+    // Config WiFi à l'écran : persiste les identifiants puis se reconnecte et
+    // resynchronise l'heure à chaud (sans redémarrer -> ne perd pas le brouillon).
+    ui.setWifiConfigHandler([](const std::string& ssid, const std::string& pass) {
+        StoredConfig c;
+        store.load(c);                       // préserve capsule / thème
+        c.wifiSsid = ssid;
+        c.wifiPass = pass;
+        store.save(c);
+        syncTimeOverWifi(ssid.c_str(), pass.c_str());
+    });
 
     // La config persistée (si elle existe) est rechargée par begin() -> la boîte
     // reprend sa capsule ; sinon elle démarre sur l'accueil (configuration).

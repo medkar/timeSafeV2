@@ -85,7 +85,7 @@ void AppStateMachine::applyResult(const PolicyResult& r) {
         case PolicyState::Setup:       ui_.showSetup(); break;
         case PolicyState::WaitingSync:  ui_.showWaitingSync(); break;
         case PolicyState::Alert:        ui_.showAlert(); break;
-        case PolicyState::Countdown:    ui_.showCountdown(r.remainingSeconds); break;
+        case PolicyState::Countdown:    ui_.showCountdown(r.remainingSeconds, cfg_.box.openDate); break;
         case PolicyState::AskPassword:  ui_.showAskPassword(r.lockedOut, r.retryAt - mono_.nowSeconds(),
                                                             cfg_.pwType == PasswordType::Pin); break;
         case PolicyState::Unlock:

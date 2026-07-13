@@ -23,7 +23,7 @@ public:
     virtual ~IUiView() {}
     virtual void showSetup() = 0;
     virtual void showWaitingSync() = 0;
-    virtual void showCountdown(int64_t remainingSeconds) = 0;
+    virtual void showCountdown(int64_t remainingSeconds, int64_t openDate) = 0;
     virtual void showAskPassword(bool lockedOut, int64_t retryInSeconds, bool pin) = 0;
     virtual void showUnlocked() = 0;
     virtual void showAlert() = 0;
