@@ -1,4 +1,5 @@
 #include "HttpsTimeClient.h"
+#include "root_ca.h"
 #include <WiFiClientSecure.h>
 #include <Arduino.h>
 #include <cstring>
@@ -34,7 +35,7 @@ HttpsTimeClient::HttpsTimeClient(const char* host) : host_(host) {}
 TimeSample HttpsTimeClient::read() {
     TimeSample out;
     WiFiClientSecure client;
-    client.setInsecure();     // TEMPORAIRE : non épinglé (étape 1)
+    client.setCACert(GTS_ROOT_R1);   // épinglé : valide la chaîne jusqu'à GTS Root R1
     client.setTimeout(10);
 
     if (!client.connect(host_, 443)) return out;

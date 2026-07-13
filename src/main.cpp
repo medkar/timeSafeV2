@@ -6,6 +6,8 @@
 #include <ThemeRegistry.h>
 #include "ui/ThemeStyle.h"
 #include "secrets.h"
+#include <sys/time.h>
+#include <cstring>
 
 using namespace tsafe;
 
@@ -44,9 +46,40 @@ static void tick(lv_timer_t*) {
     lv_label_set_text(lblClock, b);
 }
 
+static int64_t civilToEpoch(int y, unsigned mo, unsigned d, int h, int mi, int s) {
+    y -= mo <= 2;
+    int64_t era = (y >= 0 ? y : y - 399) / 400;
+    unsigned yoe = (unsigned)(y - era * 400);
+    unsigned doy = (153 * (mo + (mo > 2 ? -3 : 9)) + 2) / 5 + d - 1;
+    unsigned doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    int64_t days = era * 146097 + (int64_t)doe - 719468;
+    return days * 86400 + (int64_t)h * 3600 + mi * 60 + s;
+}
+
+// Plancher temporel = date de compilation. Résout le paradoxe : mbedTLS a besoin
+// d'une heure pour valider le certificat épinglé, or c'est justement ce qu'on
+// cherche. Le temps réel étant toujours >= date de build, on l'utilise comme base.
+static void setClockFloor() {
+    char mon[4] = {0};
+    int d = 1, y = 2026, h = 0, mi = 0, s = 0;
+    sscanf(__DATE__, "%3s %d %d", mon, &d, &y);
+    sscanf(__TIME__, "%d:%d:%d", &h, &mi, &s);
+    static const char* M = "JanFebMarAprMayJunJulAugSepOctNovDec";
+    const char* p = strstr(M, mon);
+    unsigned mo = p ? (unsigned)((p - M) / 3 + 1) : 1;
+    int64_t be = civilToEpoch(y, mo, (unsigned)d, h, mi, s);
+    struct timeval nowv;
+    gettimeofday(&nowv, nullptr);
+    if ((int64_t)nowv.tv_sec < be) {
+        struct timeval tv = { (time_t)be, 0 };
+        settimeofday(&tv, nullptr);
+    }
+}
+
 void setup() {
     Serial.begin(115200);
     lvport_init();
+    setClockFloor();   // base horloge = date de build (pour valider le cert épinglé)
 
     const Theme& t = themeById(0);
     lv_obj_t* scr = lv_screen_active();
@@ -70,10 +103,12 @@ void setup() {
             baseEpoch = ts.epoch;
             baseMs = millis();
             haveTime = true;
-            lv_label_set_text(lblSrc, "source : www.google.com (HTTPS non epingle - TEMP)");
-            Serial.printf("epoch=%lld\n", (long long)ts.epoch);
+            struct timeval tv = { (time_t)ts.epoch, 0 };
+            settimeofday(&tv, nullptr);   // cale l'horloge sur l'heure validée
+            lv_label_set_text(lblSrc, "source : www.google.com  (HTTPS epingle GTS Root R1)");
+            Serial.printf("epoch=%lld (epingle)\n", (long long)ts.epoch);
         } else {
-            lv_label_set_text(lblClock, "echec heure");
+            lv_label_set_text(lblClock, "echec heure (cert refuse ?)");
         }
     } else {
         lv_label_set_text(lblStatus, "WiFi : echec (verifie src/secrets.h)");
