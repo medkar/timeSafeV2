@@ -16,7 +16,7 @@ struct StoredConfig {
     PasswordType pwType = PasswordType::Pin;
     std::string salt;                // sel aléatoire (octets)
     std::string hash;                // sortie PBKDF2 (octets)
-    uint32_t pbkdf2Iters = 100000;
+    uint32_t pbkdf2Iters = 1;      // hash salé instantané (le stretching lourd est superflu : backoff + Flash Encryption font la sécurité). Augmentable si besoin.
     AttemptState attempts;
     bool hasLastKnown = false;
     int64_t lastKnownGood = 0;

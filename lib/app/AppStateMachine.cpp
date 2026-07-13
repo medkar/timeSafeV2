@@ -56,7 +56,7 @@ void AppStateMachine::handleArm(const UiEvent& ev) {
     if (ev.config.hasPassword) {
         c.salt = hasher_.randomSalt(16);
         c.hash = hasher_.derive(ev.newPassword, c.salt, c.pbkdf2Iters);
-        c.pwType = PasswordType::Alnum;
+        c.pwType = ev.isPin ? PasswordType::Pin : PasswordType::Alnum;
     }
     c.attempts = resetAttempts();
     store_.save(c);
@@ -86,7 +86,8 @@ void AppStateMachine::applyResult(const PolicyResult& r) {
         case PolicyState::WaitingSync:  ui_.showWaitingSync(); break;
         case PolicyState::Alert:        ui_.showAlert(); break;
         case PolicyState::Countdown:    ui_.showCountdown(r.remainingSeconds); break;
-        case PolicyState::AskPassword:  ui_.showAskPassword(r.lockedOut, r.retryAt - mono_.nowSeconds()); break;
+        case PolicyState::AskPassword:  ui_.showAskPassword(r.lockedOut, r.retryAt - mono_.nowSeconds(),
+                                                            cfg_.pwType == PasswordType::Pin); break;
         case PolicyState::Unlock:
             if (!unlockedThisSession_) {
                 lock_.unlock();
@@ -106,6 +107,9 @@ void AppStateMachine::tick() {
         handleArm(ev);
     } else if (ev.type == UiEventType::RearmRequested) {
         handleRearm();
+    } else if (ev.type == UiEventType::ThemeChanged) {
+        cfg_.themeId = ev.themeId;   // le thème choisi survit au reboot
+        store_.save(cfg_);
     }
 
     // 2. Décider et agir.

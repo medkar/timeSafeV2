@@ -12,7 +12,7 @@
 #include "hw/HttpsTimeClient.h"
 #include "hw/SystemClock.h"
 #include "hw/RtcClock.h"
-#include "hw/StubHasher.h"
+#include "hw/PasswordHasherMbedtls.h"
 #include "hw/NvsStore.h"
 #include "hw/MonotonicClock.h"
 #include "ui/LvglUiView.h"
@@ -30,7 +30,7 @@ static SystemClock      sysClock;
 static RtcClock         rtcClock;    // DS3231 (HW-111) sur Wire1 (GPIO16/17)
 static ServoLock        servo(13, 0, 90);
 static MonotonicClock   mono;
-static StubHasher       hasher;
+static PasswordHasherMbedtls hasher;   // PBKDF2-HMAC-SHA256 réel
 static NvsStore         store;       // persistance flash (survit à la coupure)
 static LvglUiView       ui(0);       // thème Coffre
 static AppStateMachine* app = nullptr;
@@ -65,6 +65,8 @@ static void setClockFloor() {
 
 void setup() {
     Serial.begin(115200);
+    Serial.printf("PBKDF2 self-test %s\n",
+                  PasswordHasherMbedtls::selfTest() ? "OK" : "FAIL");
     lvport_init();
     setClockFloor();
 
@@ -103,10 +105,11 @@ void setup() {
     {
         StoredConfig probe;
         bool had = store.load(probe);
-        Serial.printf("NVS begin=%d had=%d armed=%d hasDate=%d hasPwd=%d openDate=%lld\n",
+        if (had) ui.setTheme(probe.themeId);      // restaure le thème choisi
+        Serial.printf("NVS begin=%d had=%d armed=%d hasDate=%d hasPwd=%d theme=%d openDate=%lld\n",
                       (int)nvsOk, (int)had, (int)probe.box.armed,
                       (int)probe.box.hasDate, (int)probe.box.hasPassword,
-                      (long long)probe.box.openDate);
+                      (int)probe.themeId, (long long)probe.box.openDate);
     }
 
     // La config persistée (si elle existe) est rechargée par begin() -> la boîte

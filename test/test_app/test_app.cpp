@@ -38,12 +38,12 @@ public:
 class FakeUi : public IUiView {
 public:
     PolicyState lastShown = PolicyState::Setup;
-    int64_t lastRemaining = -1; bool lastLockedOut = false;
+    int64_t lastRemaining = -1; bool lastLockedOut = false; bool lastPin = false;
     std::vector<UiEvent> queue; size_t idx = 0;
     void showSetup() override { lastShown = PolicyState::Setup; }
     void showWaitingSync() override { lastShown = PolicyState::WaitingSync; }
     void showCountdown(int64_t r) override { lastShown = PolicyState::Countdown; lastRemaining = r; }
-    void showAskPassword(bool lo, int64_t) override { lastShown = PolicyState::AskPassword; lastLockedOut = lo; }
+    void showAskPassword(bool lo, int64_t, bool pin) override { lastShown = PolicyState::AskPassword; lastLockedOut = lo; lastPin = pin; }
     void showUnlocked() override { lastShown = PolicyState::Unlock; }
     void showAlert() override { lastShown = PolicyState::Alert; }
     UiEvent pollEvent() override {
@@ -195,8 +195,34 @@ void test_rearm_after_unlock_returns_to_setup() {
     TEST_ASSERT_FALSE(saved.box.hasDate);
 }
 
+void test_arm_pin_persists_pwtype_pin() {
+    Fixture f; f.build(); f.app->begin();
+    UiEvent e; e.type = UiEventType::ArmRequested;
+    e.config.armed = true; e.config.hasPassword = true;
+    e.newPassword = "123456"; e.isPin = true;
+    f.ui.queue.push_back(e);
+    f.app->tick();
+    StoredConfig saved; TEST_ASSERT_TRUE(f.store.load(saved));
+    TEST_ASSERT_TRUE(saved.box.hasPassword);
+    TEST_ASSERT_EQUAL_INT((int)PasswordType::Pin, (int)saved.pwType);
+    // l'écran de déverrouillage doit indiquer le mode PIN
+    TEST_ASSERT_EQUAL_INT((int)PolicyState::AskPassword, (int)f.ui.lastShown);
+    TEST_ASSERT_TRUE(f.ui.lastPin);
+}
+
+void test_theme_change_persists() {
+    Fixture f; f.build(); f.app->begin();
+    UiEvent e; e.type = UiEventType::ThemeChanged; e.themeId = 3;
+    f.ui.queue.push_back(e);
+    f.app->tick();
+    StoredConfig saved; TEST_ASSERT_TRUE(f.store.load(saved));
+    TEST_ASSERT_EQUAL_UINT8(3, saved.themeId);   // thème persisté (survit au reboot)
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
+    RUN_TEST(test_theme_change_persists);
+    RUN_TEST(test_arm_pin_persists_pwtype_pin);
     RUN_TEST(test_rearm_after_unlock_returns_to_setup);
     RUN_TEST(test_arm_request_arms_capsule);
     RUN_TEST(test_begin_forces_lock);

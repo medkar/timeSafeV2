@@ -14,16 +14,18 @@ class LvglUiView : public IUiView {
 public:
     explicit LvglUiView(uint8_t themeId);
 
+    void setTheme(uint8_t id);   // applique un thème (ex. celui relu depuis la NVS au boot)
+
     void showSetup() override;
     void showWaitingSync() override;
     void showCountdown(int64_t remainingSeconds) override;
-    void showAskPassword(bool lockedOut, int64_t retryInSeconds) override;
+    void showAskPassword(bool lockedOut, int64_t retryInSeconds, bool pin) override;
     void showUnlocked() override;
     void showAlert() override;
     UiEvent pollEvent() override;
 
 private:
-    enum class SetupPage { Menu, DateEdit, PwEdit };
+    enum class SetupPage { Menu, DateEdit, PwChoose, PwEdit };
 
     // Construction des écrans
     void buildCountdown();
@@ -31,31 +33,38 @@ private:
     void buildSetupPage();
     void buildMenu();
     void buildDateEdit();
-    void buildPassword(const char* title, bool forUnlock); // clavier + textarea
-    void addBackButton();                                  // « ◀ Retour » -> menu
+    void buildPwChoose();                                   // choix PIN / mot de passe
+    void buildPassword(const char* title, bool forUnlock, bool isPin);
+    void buildPinPad(lv_obj_t* scr);                        // pavé numérique 0-9
+    void addBackButton();                                   // « Retour » -> menu
 
     // Actions déclenchées par le tactile
     void cycleTheme();
     void backToMenu();
     void openDateEdit();
-    void openPwEdit();
+    void openPwChoose();
+    void choosePin(bool pin);                               // choisit le type puis saisie
     void validateDate();
     void requestArm();
     void requestRearm();
     void kbReady();
     void kbCancel();
+    void pinKey(lv_event_t* e);                             // touche du pavé numérique
     void updateAskPassword(bool lockedOut, int64_t retryIn);
 
     // Callbacks statiques -> instance via user_data
     static void onThemeCb(lv_event_t* e);
     static void onBackCb(lv_event_t* e);
     static void onDateCb(lv_event_t* e);
-    static void onPwCb(lv_event_t* e);
+    static void onProtectCb(lv_event_t* e);
+    static void onPinChoiceCb(lv_event_t* e);
+    static void onTextChoiceCb(lv_event_t* e);
     static void onArmCb(lv_event_t* e);
     static void onRearmCb(lv_event_t* e);
     static void onDateOkCb(lv_event_t* e);
     static void onKbReadyCb(lv_event_t* e);
     static void onKbCancelCb(lv_event_t* e);
+    static void onPinKeyCb(lv_event_t* e);
 
     uint8_t themeId_;
     int cur_ = -1;                 // PolicyState affiché (-1 = aucun)
@@ -64,6 +73,13 @@ private:
     // Brouillon de configuration en cours de saisie
     BoxConfig draft_;
     std::string draftPassword_;
+
+    // Saisie mot de passe en deux temps (définition) : 1re saisie puis confirmation.
+    std::string pwFirstEntry_;   // code saisi à la 1re étape
+    bool pwConfirming_ = false;  // true = on est à l'étape "retape le code"
+    std::string pwError_;        // message à afficher après reconstruction (ex. non-concordance)
+    bool pwTypePin_ = false;     // type choisi pour le brouillon : PIN (true) ou texte
+    bool curEntryPin_ = false;   // l'écran de saisie courant est un pavé PIN
 
     // Événement en attente pour la machine à états
     UiEvent pending_;

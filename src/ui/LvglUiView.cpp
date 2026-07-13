@@ -5,6 +5,7 @@
 #include <Domain.h>
 #include <LocalTime.h>
 #include <cstdio>
+#include <cstring>
 #include <string>
 #include <time.h>
 
@@ -80,17 +81,39 @@ void LvglUiView::buildMenu() {
     }
     themedButton(col, t, buf, false, onDateCb, this);
 
-    snprintf(buf, sizeof(buf), "Mot de passe : %s", draft_.hasPassword ? "defini" : "—");
-    themedButton(col, t, buf, false, onPwCb, this);
+    const char* prot = !draft_.hasPassword ? "—"
+                     : (pwTypePin_ ? "code PIN" : "mot de passe");
+    snprintf(buf, sizeof(buf), "Protection : %s", prot);
+    themedButton(col, t, buf, false, onProtectCb, this);
 
     bool ready = draft_.hasDate || draft_.hasPassword;
     if (ready) {
         themedButton(col, t, t.wording.armButton, true, onArmCb, this);
     } else {
         themedButton(col, t, t.wording.armButton, false, nullptr, this);
-        themeLabel(col, "Choisis au moins une date ou un mot de passe",
+        themeLabel(col, "Choisis au moins une date ou une protection",
                    t.palette.muted, 14);
     }
+}
+
+// ---------- Choix du type de protection ----------
+void LvglUiView::buildPwChoose() {
+    const Theme& t = themeById(themeId_);
+    lv_obj_t* scr = lv_screen_active();
+    themeApplyBg(scr, t);
+
+    lv_obj_t* col = container(scr);
+    lv_obj_set_size(col, 340, LV_SIZE_CONTENT);
+    lv_obj_center(col);
+    lv_obj_set_flex_flow(col, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(col, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_row(col, 12, 0);
+
+    themeLabel(col, "TYPE DE PROTECTION", t.palette.muted, 14, 3);
+    themedButton(col, t, "Code PIN  -  6 chiffres", true, onPinChoiceCb, this);
+    themedButton(col, t, "Mot de passe  -  texte", false, onTextChoiceCb, this);
+
+    addBackButton();
 }
 
 // ---------- Éditeur de date (rollers) ----------
@@ -169,9 +192,10 @@ void LvglUiView::buildDateEdit() {
     addBackButton();
 }
 
-// ---------- Clavier mot de passe (setup ou déverrouillage) ----------
-void LvglUiView::buildPassword(const char* title, bool forUnlock) {
+// ---------- Saisie (clavier texte OU pavé PIN, setup ou déverrouillage) ----------
+void LvglUiView::buildPassword(const char* title, bool forUnlock, bool isPin) {
     kbForUnlock_ = forUnlock;
+    curEntryPin_ = isPin;
     const Theme& t = themeById(themeId_);
     lv_obj_t* scr = lv_screen_active();
     themeApplyBg(scr, t);
@@ -183,11 +207,14 @@ void LvglUiView::buildPassword(const char* title, bool forUnlock) {
     lv_textarea_set_one_line(ta_, true);
     lv_textarea_set_password_mode(ta_, true);
     lv_textarea_set_password_bullet(ta_, "*");   // ASCII : présent dans toute police
-    lv_textarea_set_max_length(ta_, 32);
-    lv_textarea_set_placeholder_text(ta_, forUnlock ? "code" : "choisis un code");
-    lv_obj_set_width(ta_, 300);
+    lv_textarea_set_max_length(ta_, isPin ? 6 : 32);
+    lv_textarea_set_placeholder_text(
+        ta_, forUnlock ? (isPin ? "code PIN" : "code")
+                       : (pwConfirming_ ? "retape" : (isPin ? "6 chiffres" : "choisis un code")));
+    lv_obj_set_width(ta_, isPin ? 180 : 300);
     lv_obj_align(ta_, LV_ALIGN_TOP_MID, 0, 34);
     lv_obj_set_style_text_font(ta_, themeFont(28), 0);
+    lv_obj_set_style_text_align(ta_, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_bg_color(ta_, lv_color_hex(t.palette.bg), 0);
     lv_obj_set_style_text_color(ta_, lv_color_hex(t.palette.accent), 0);
     lv_obj_set_style_border_color(ta_, lv_color_hex(t.palette.accent), 0);
@@ -195,15 +222,49 @@ void LvglUiView::buildPassword(const char* title, bool forUnlock) {
 
     pwStatus_ = themeLabel(scr, "", t.palette.warn, 14);
     lv_obj_align(pwStatus_, LV_ALIGN_TOP_MID, 0, 84);
+    if (!forUnlock && !pwError_.empty()) {       // message en attente (ex. codes différents)
+        lv_label_set_text(pwStatus_, pwError_.c_str());
+        pwError_.clear();
+    }
 
-    kb_ = lv_keyboard_create(scr);
-    lv_keyboard_set_mode(kb_, LV_KEYBOARD_MODE_TEXT_LOWER);
-    lv_keyboard_set_textarea(kb_, ta_);
-    lv_obj_add_event_cb(kb_, onKbReadyCb, LV_EVENT_READY, this);
-    lv_obj_add_event_cb(kb_, onKbCancelCb, LV_EVENT_CANCEL, this);
+    if (isPin) {
+        buildPinPad(scr);
+    } else {
+        kb_ = lv_keyboard_create(scr);
+        lv_keyboard_set_mode(kb_, LV_KEYBOARD_MODE_TEXT_LOWER);
+        lv_keyboard_set_textarea(kb_, ta_);
+        lv_obj_add_event_cb(kb_, onKbReadyCb, LV_EVENT_READY, this);
+        lv_obj_add_event_cb(kb_, onKbCancelCb, LV_EVENT_CANCEL, this);
+    }
 
     // Retour possible seulement pendant la configuration (pas au déverrouillage).
     if (!forUnlock) addBackButton();
+}
+
+// Pavé numérique 0-9 + effacer + valider, relié à ta_.
+void LvglUiView::buildPinPad(lv_obj_t* scr) {
+    const Theme& t = themeById(themeId_);
+    static const char* map[] = {
+        "1", "2", "3", "\n",
+        "4", "5", "6", "\n",
+        "7", "8", "9", "\n",
+        LV_SYMBOL_BACKSPACE, "0", LV_SYMBOL_OK, ""
+    };
+    lv_obj_t* bm = lv_buttonmatrix_create(scr);
+    lv_buttonmatrix_set_map(bm, map);
+    lv_obj_set_size(bm, 300, 200);
+    lv_obj_align(bm, LV_ALIGN_BOTTOM_MID, 0, -8);
+    lv_obj_set_style_bg_opa(bm, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(bm, 0, 0);
+    lv_obj_set_style_pad_all(bm, 4, 0);
+    lv_obj_set_style_pad_gap(bm, 6, 0);
+    lv_obj_set_style_text_font(bm, themeFont(28), LV_PART_ITEMS);
+    lv_obj_set_style_bg_color(bm, lv_color_mix(lv_color_hex(t.palette.text),
+                                               lv_color_hex(t.palette.bg), 28), LV_PART_ITEMS);
+    lv_obj_set_style_bg_opa(bm, LV_OPA_COVER, LV_PART_ITEMS);
+    lv_obj_set_style_text_color(bm, lv_color_hex(t.palette.text), LV_PART_ITEMS);
+    lv_obj_set_style_radius(bm, 6, LV_PART_ITEMS);
+    lv_obj_add_event_cb(bm, onPinKeyCb, LV_EVENT_VALUE_CHANGED, this);
 }
 
 // Bouton « Retour » constant en haut à gauche -> revient au menu de config.
@@ -232,7 +293,14 @@ void LvglUiView::buildSetupPage() {
     switch (setupPage_) {
         case SetupPage::Menu:     buildMenu(); break;
         case SetupPage::DateEdit: buildDateEdit(); break;
-        case SetupPage::PwEdit:   buildPassword("MOT DE PASSE", /*forUnlock=*/false); break;
+        case SetupPage::PwChoose: buildPwChoose(); break;
+        case SetupPage::PwEdit: {
+            const char* title = pwTypePin_
+                ? (pwConfirming_ ? "CONFIRME LE PIN" : "CODE PIN - 6 CHIFFRES")
+                : (pwConfirming_ ? "CONFIRME LE CODE" : "CHOISIS UN MOT DE PASSE");
+            buildPassword(title, /*forUnlock=*/false, /*isPin=*/pwTypePin_);
+            break;
+        }
     }
 }
 
@@ -246,10 +314,24 @@ void LvglUiView::cycleTheme() {
     themeId_ = (uint8_t)((themeId_ + 1) % themeCount());
     setupPage_ = SetupPage::Menu;
     rebuildSetup();
+    pending_ = UiEvent{};                       // persiste le nouveau thème
+    pending_.type = UiEventType::ThemeChanged;
+    pending_.themeId = themeId_;
+    hasPending_ = true;
+}
+
+void LvglUiView::setTheme(uint8_t id) {
+    themeId_ = (uint8_t)(id % themeCount());
+    if (cur_ == (int)PolicyState::Setup) rebuildSetup();   // rafraîchit si déjà à l'écran
 }
 void LvglUiView::backToMenu()   { setupPage_ = SetupPage::Menu;     rebuildSetup(); }
 void LvglUiView::openDateEdit() { setupPage_ = SetupPage::DateEdit; rebuildSetup(); }
-void LvglUiView::openPwEdit()   { setupPage_ = SetupPage::PwEdit;   rebuildSetup(); }
+void LvglUiView::openPwChoose() { setupPage_ = SetupPage::PwChoose; rebuildSetup(); }
+void LvglUiView::choosePin(bool pin) {
+    pwTypePin_ = pin;
+    pwConfirming_ = false; pwFirstEntry_.clear(); pwError_.clear();  // repart propre
+    setupPage_ = SetupPage::PwEdit; rebuildSetup();
+}
 
 void LvglUiView::validateDate() {
     int d  = (int)lv_roller_get_selected(rDay_)  + 1;
@@ -270,7 +352,10 @@ void LvglUiView::requestArm() {
     pending_.type = UiEventType::ArmRequested;
     pending_.config = draft_;
     pending_.config.armed = true;
-    if (draft_.hasPassword) pending_.newPassword = draftPassword_;
+    if (draft_.hasPassword) {
+        pending_.newPassword = draftPassword_;
+        pending_.isPin = pwTypePin_;
+    }
     hasPending_ = true;
 }
 
@@ -283,16 +368,40 @@ void LvglUiView::requestRearm() {
 void LvglUiView::kbReady() {
     const char* txt = lv_textarea_get_text(ta_);
     std::string s = txt ? txt : "";
-    if (kbForUnlock_) {
+
+    if (kbForUnlock_) {                           // déverrouillage : une seule saisie
         pending_ = UiEvent{};
         pending_.type = UiEventType::PasswordSubmitted;
         pending_.password = s;
         hasPending_ = true;
         lv_textarea_set_text(ta_, "");            // prêt pour une nouvelle tentative
-    } else {
-        draft_.hasPassword = !s.empty();
+        return;
+    }
+
+    // Définition : saisie en deux temps.
+    if (!pwConfirming_) {
+        if (s.empty()) {                          // vide -> retire le mot de passe
+            draft_.hasPassword = false;
+            draftPassword_.clear();
+            backToMenu();
+            return;
+        }
+        pwFirstEntry_ = s;                        // mémorise, passe à la confirmation
+        pwConfirming_ = true;
+        rebuildSetup();
+        return;
+    }
+    // Étape de confirmation.
+    if (s == pwFirstEntry_) {
+        draft_.hasPassword = true;
         draftPassword_ = s;
-        setupPage_ = SetupPage::Menu;
+        pwFirstEntry_.clear();
+        pwConfirming_ = false;
+        backToMenu();
+    } else {
+        pwError_ = "Les codes ne correspondent pas";
+        pwFirstEntry_.clear();
+        pwConfirming_ = false;                    // repart de la 1re saisie
         rebuildSetup();
     }
 }
@@ -303,6 +412,27 @@ void LvglUiView::kbCancel() {
     } else {
         backToMenu();                             // retour menu sans définir de mot de passe
     }
+}
+
+// Touche du pavé numérique : chiffre -> ajoute, ⌫ -> efface, OK -> valide (6 chiffres).
+void LvglUiView::pinKey(lv_event_t* e) {
+    lv_obj_t* bm = (lv_obj_t*)lv_event_get_target(e);
+    uint32_t id = lv_buttonmatrix_get_selected_button(bm);
+    const char* k = lv_buttonmatrix_get_button_text(bm, id);
+    if (!k) return;
+    if (strcmp(k, LV_SYMBOL_BACKSPACE) == 0) {
+        lv_textarea_delete_char(ta_);
+        return;
+    }
+    if (strcmp(k, LV_SYMBOL_OK) == 0) {
+        if (strlen(lv_textarea_get_text(ta_)) != 6) {   // impose 6 chiffres
+            if (pwStatus_) lv_label_set_text(pwStatus_, "6 chiffres");
+            return;
+        }
+        kbReady();                                       // même logique (une saisie / deux temps)
+        return;
+    }
+    if (strlen(lv_textarea_get_text(ta_)) < 6) lv_textarea_add_text(ta_, k);  // chiffre
 }
 
 void LvglUiView::updateAskPassword(bool lockedOut, int64_t retryIn) {
@@ -321,12 +451,15 @@ void LvglUiView::updateAskPassword(bool lockedOut, int64_t retryIn) {
 void LvglUiView::onThemeCb(lv_event_t* e)       { static_cast<LvglUiView*>(lv_event_get_user_data(e))->cycleTheme(); }
 void LvglUiView::onBackCb(lv_event_t* e)        { static_cast<LvglUiView*>(lv_event_get_user_data(e))->backToMenu(); }
 void LvglUiView::onDateCb(lv_event_t* e)        { static_cast<LvglUiView*>(lv_event_get_user_data(e))->openDateEdit(); }
-void LvglUiView::onPwCb(lv_event_t* e)          { static_cast<LvglUiView*>(lv_event_get_user_data(e))->openPwEdit(); }
+void LvglUiView::onProtectCb(lv_event_t* e)     { static_cast<LvglUiView*>(lv_event_get_user_data(e))->openPwChoose(); }
+void LvglUiView::onPinChoiceCb(lv_event_t* e)   { static_cast<LvglUiView*>(lv_event_get_user_data(e))->choosePin(true); }
+void LvglUiView::onTextChoiceCb(lv_event_t* e)  { static_cast<LvglUiView*>(lv_event_get_user_data(e))->choosePin(false); }
 void LvglUiView::onArmCb(lv_event_t* e)         { static_cast<LvglUiView*>(lv_event_get_user_data(e))->requestArm(); }
 void LvglUiView::onRearmCb(lv_event_t* e)       { static_cast<LvglUiView*>(lv_event_get_user_data(e))->requestRearm(); }
 void LvglUiView::onDateOkCb(lv_event_t* e)      { static_cast<LvglUiView*>(lv_event_get_user_data(e))->validateDate(); }
 void LvglUiView::onKbReadyCb(lv_event_t* e)     { static_cast<LvglUiView*>(lv_event_get_user_data(e))->kbReady(); }
 void LvglUiView::onKbCancelCb(lv_event_t* e)    { static_cast<LvglUiView*>(lv_event_get_user_data(e))->kbCancel(); }
+void LvglUiView::onPinKeyCb(lv_event_t* e)      { static_cast<LvglUiView*>(lv_event_get_user_data(e))->pinKey(e); }
 
 LvglUiView::LvglUiView(uint8_t themeId) : themeId_(themeId) {}
 
@@ -384,6 +517,7 @@ void LvglUiView::showSetup() {
     setupPage_ = SetupPage::Menu;
     draft_ = BoxConfig{};                 // nouvelle session de configuration
     draftPassword_.clear();
+    pwFirstEntry_.clear(); pwConfirming_ = false; pwError_.clear();
     lv_obj_clean(lv_screen_active());
     buildSetupPage();
     cur_ = (int)PolicyState::Setup;
@@ -396,10 +530,10 @@ void LvglUiView::showWaitingSync() {
     cur_ = (int)PolicyState::WaitingSync;
 }
 
-void LvglUiView::showAskPassword(bool lockedOut, int64_t retryInSeconds) {
+void LvglUiView::showAskPassword(bool lockedOut, int64_t retryInSeconds, bool pin) {
     if (cur_ != (int)PolicyState::AskPassword) {
         lv_obj_clean(lv_screen_active());
-        buildPassword(themeById(themeId_).wording.passwordTitle, /*forUnlock=*/true);
+        buildPassword(themeById(themeId_).wording.passwordTitle, /*forUnlock=*/true, /*isPin=*/pin);
         cur_ = (int)PolicyState::AskPassword;
     }
     updateAskPassword(lockedOut, retryInSeconds);
