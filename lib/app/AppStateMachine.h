@@ -25,6 +25,7 @@ private:
     void applyResult(const PolicyResult& r);
     void handlePasswordSubmit(const std::string& candidate);
     void handleArm(const UiEvent& ev);
+    void handleRearm();   // désarme après ouverture -> retour à l'accueil
 
     IStore& store_;
     IClockSource& https_;

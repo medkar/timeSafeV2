@@ -66,6 +66,20 @@ void AppStateMachine::handleArm(const UiEvent& ev) {
     lock_.forceLock();                  // verrouille immédiatement à l'armement
 }
 
+void AppStateMachine::handleRearm() {
+    StoredConfig c = cfg_;              // conserve thème / wifi / plancher anti-rollback
+    c.box = BoxConfig{};                // désarme : plus de date ni de mot de passe
+    c.hash.clear();
+    c.salt.clear();
+    c.attempts = resetAttempts();
+    store_.save(c);                     // persiste l'état désarmé (survit au reboot)
+    cfg_ = c;
+    passwordSatisfied_ = false;
+    unlockedThisSession_ = false;
+    // Pas de forceLock : la boîte vient d'être ouverte, on la laisse ouverte pour
+    // reconfiguration ; le verrouillage se refera à l'armement.
+}
+
 void AppStateMachine::applyResult(const PolicyResult& r) {
     switch (r.state) {
         case PolicyState::Setup:       ui_.showSetup(); break;
@@ -90,6 +104,8 @@ void AppStateMachine::tick() {
         handlePasswordSubmit(ev.password);
     } else if (ev.type == UiEventType::ArmRequested) {
         handleArm(ev);
+    } else if (ev.type == UiEventType::RearmRequested) {
+        handleRearm();
     }
 
     // 2. Décider et agir.

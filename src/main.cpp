@@ -13,7 +13,7 @@
 #include "hw/SystemClock.h"
 #include "hw/RtcClock.h"
 #include "hw/StubHasher.h"
-#include "hw/MemStore.h"
+#include "hw/NvsStore.h"
 #include "hw/MonotonicClock.h"
 #include "ui/LvglUiView.h"
 #include "ui/ThemeStyle.h"
@@ -31,7 +31,7 @@ static RtcClock         rtcClock;    // DS3231 (HW-111) sur Wire1 (GPIO16/17)
 static ServoLock        servo(13, 0, 90);
 static MonotonicClock   mono;
 static StubHasher       hasher;
-static MemStore         store;
+static NvsStore         store;       // persistance flash (survit à la coupure)
 static LvglUiView       ui(0);       // thème Coffre
 static AppStateMachine* app = nullptr;
 
@@ -98,10 +98,22 @@ void setup() {
                       (int)r.present, (long long)r.epoch);
     }
 
-    // Pas de config armée -> la boîte démarre sur l'accueil (écran de configuration).
+    // Ouvre la NVS et diagnostique ce qui a survécu à la dernière coupure.
+    bool nvsOk = store.begin();
+    {
+        StoredConfig probe;
+        bool had = store.load(probe);
+        Serial.printf("NVS begin=%d had=%d armed=%d hasDate=%d hasPwd=%d openDate=%lld\n",
+                      (int)nvsOk, (int)had, (int)probe.box.armed,
+                      (int)probe.box.hasDate, (int)probe.box.hasPassword,
+                      (long long)probe.box.openDate);
+    }
+
+    // La config persistée (si elle existe) est rechargée par begin() -> la boîte
+    // reprend sa capsule ; sinon elle démarre sur l'accueil (configuration).
     app = new AppStateMachine(store, sysClock, rtcClock, servo, mono, hasher, ui);
     app->begin();
-    Serial.printf("Accueil. now=%lld\n", (long long)time(nullptr));
+    Serial.printf("Demarrage. now=%lld\n", (long long)time(nullptr));
 }
 
 void loop() {

@@ -107,15 +107,16 @@ void test_date_reached_unlocks() {
     TEST_ASSERT_EQUAL_INT(1, f.lock.unlockCalls);
 }
 
-void test_anomaly_shows_alert_stays_locked() {
+void test_or_rule_one_source_reached_opens() {
+    // Règle OU : le HTTPS n'a pas atteint la date mais le RTC oui -> la boîte ouvre.
     Fixture f;
     f.store.present = true; f.store.data = armedDate(5000);
-    f.https.sample = {true, 6000};
-    f.rtc.sample = {true, 999999}; // diverge -> anomalie
+    f.https.sample = {true, 1000};   // pas encore atteint
+    f.rtc.sample   = {true, 6000};   // atteint -> ouvre (maximum)
     f.build(); f.app->begin();
     f.app->tick();
-    TEST_ASSERT_EQUAL_INT((int)PolicyState::Alert, (int)f.ui.lastShown);
-    TEST_ASSERT_EQUAL_INT(0, f.lock.unlockCalls);
+    TEST_ASSERT_EQUAL_INT((int)PolicyState::Unlock, (int)f.ui.lastShown);
+    TEST_ASSERT_EQUAL_INT(1, f.lock.unlockCalls);
 }
 
 void test_correct_password_unlocks() {
@@ -176,13 +177,32 @@ void test_arm_request_arms_capsule() {
     TEST_ASSERT_EQUAL_INT(2, f.lock.lockCalls); // begin + armement
 }
 
+void test_rearm_after_unlock_returns_to_setup() {
+    Fixture f;
+    f.store.present = true; f.store.data = armedDate(5000);
+    f.https.sample = {true, 6000};          // date atteinte -> ouverture
+    f.build(); f.app->begin();
+    f.app->tick();
+    TEST_ASSERT_EQUAL_INT((int)PolicyState::Unlock, (int)f.ui.lastShown);
+
+    // Un clic sur l'écran d'ouverture -> désarmement.
+    UiEvent e; e.type = UiEventType::RearmRequested;
+    f.ui.queue.push_back(e);
+    f.app->tick();
+    TEST_ASSERT_EQUAL_INT((int)PolicyState::Setup, (int)f.ui.lastShown);
+    StoredConfig saved; TEST_ASSERT_TRUE(f.store.load(saved));
+    TEST_ASSERT_FALSE(saved.box.armed);     // config désarmée et persistée
+    TEST_ASSERT_FALSE(saved.box.hasDate);
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
+    RUN_TEST(test_rearm_after_unlock_returns_to_setup);
     RUN_TEST(test_arm_request_arms_capsule);
     RUN_TEST(test_begin_forces_lock);
     RUN_TEST(test_date_not_reached_shows_countdown_stays_locked);
     RUN_TEST(test_date_reached_unlocks);
-    RUN_TEST(test_anomaly_shows_alert_stays_locked);
+    RUN_TEST(test_or_rule_one_source_reached_opens);
     RUN_TEST(test_correct_password_unlocks);
     RUN_TEST(test_wrong_password_registers_backoff_and_persists);
     RUN_TEST(test_locked_out_ignores_password_attempt);
