@@ -10,7 +10,7 @@ using namespace tsafe;
 // (moitié gauche) au toucher. Servira de base à l'UI réelle (Plan 3).
 static int      scrIdx = 0;
 static uint8_t  themeIdx = 0;
-static const int SCR_COUNT = 5;
+static const int SCR_COUNT = 7;
 static int64_t  demoSec;
 
 static void build(lv_obj_t* scr) {
@@ -28,6 +28,8 @@ static void build(lv_obj_t* scr) {
         case 2: viewUnlocked(scr, t); break;
         case 3: viewAlert(scr, t);    break;
         case 4: viewSync(scr, t);     break;
+        case 5: viewPin(scr, t);      break;
+        case 6: viewKeyboard(scr, t); break;
     }
     Serial.printf("screen=%d theme=%s\n", scrIdx, t.name);
 }

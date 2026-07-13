@@ -11,5 +11,7 @@ void viewSetup(lv_obj_t* scr, const Theme& t);
 void viewUnlocked(lv_obj_t* scr, const Theme& t);
 void viewAlert(lv_obj_t* scr, const Theme& t);
 void viewSync(lv_obj_t* scr, const Theme& t);
+void viewPin(lv_obj_t* scr, const Theme& t);
+void viewKeyboard(lv_obj_t* scr, const Theme& t);
 
 } // namespace tsafe
