@@ -1,7 +1,9 @@
-
 # Build / IDE
 .pio/
 .vscode/
 
-# Secrets (identifiants WiFi) - jamais commite
+# Notes de conception internes (non publiées)
+docs/_internal/
+
+# Secrets (identifiants WiFi) - jamais commité
 src/secrets.h
