@@ -16,6 +16,7 @@
 #include "hw/PasswordHasherMbedtls.h"
 #include "hw/NvsStore.h"
 #include "hw/MonotonicClock.h"
+#include "board_config.h"
 #include "ui/LvglUiView.h"
 #include "ui/ThemeStyle.h"
 #include "ui/Views.h"
@@ -28,8 +29,8 @@ using namespace tsafe;
 static WiFiProvisioner  wifi;
 static HttpsTimeClient  httpsBoot("www.google.com");
 static SystemClock      sysClock;
-static RtcClock         rtcClock;    // DS3231 (HW-111) sur Wire1 (GPIO16/17)
-static ServoLock        servo(13, 0, 90);
+static RtcClock         rtcClock;    // DS3231 (HW-111) sur Wire1 (voir board_config.h)
+static ServoLock        servo(TS_SERVO_PIN, TS_SERVO_ANGLE_LOCKED, TS_SERVO_ANGLE_UNLOCKED);
 static MonotonicClock   mono;
 static PasswordHasherMbedtls hasher;   // PBKDF2-HMAC-SHA256 réel
 static NvsStore         store;       // persistance flash (survit à la coupure)
@@ -91,7 +92,7 @@ void setup() {
     lv_timer_handler();
 
     servo.begin();                          // attache + verrouille (fail-closed)
-    bool rtcOk = rtcClock.begin(32, 19);    // RTC sur bus I²C dédié (Wire1) : SDA=32, SCL=19
+    bool rtcOk = rtcClock.begin(TS_RTC_PIN_SDA, TS_RTC_PIN_SCL);  // RTC sur bus I²C dédié (Wire1)
 
     Serial.print("I2C scan Wire1:");        // diagnostic
     for (uint8_t a = 1; a < 127; ++a) {
