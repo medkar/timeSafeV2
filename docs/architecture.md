@@ -16,7 +16,7 @@ renders themed screens. This is what makes 69 unit tests run on a PC with no boa
         |   lib/domain  TimeCore (trusted time), LockPolicy, Backoff  |
         |   lib/config  StoredConfig codec                            |
         |   lib/theme   theme registry                                |
-        |   lib/hal     interfaces: IClock, ILock, IStore, IHasher …  |
+        |   lib/hal     interfaces: IClockSource, ILock, IUiView …    |
         +-------------------------------------------------------------+
                               |  interfaces implemented by
         +-------------------------------------------------------------+
@@ -33,8 +33,8 @@ renders themed screens. This is what makes 69 unit tests run on a PC with no boa
 1. `AppStateMachine::tick()` polls one UI event (password/arm/rearm/theme).
 2. It builds a `PolicyInput`: resolved time + stored config + failure state.
 3. `resolveTime()` cross-checks the two clock sources (below).
-4. `LockPolicy::decide()` returns a `PolicyState` (Setup / WaitingSync /
-   Countdown / AskPassword / Unlock).
+4. `LockPolicy::decide()` returns the current `PolicyState` — in normal use one
+   of Setup / WaitingSync / Countdown / AskPassword / Unlock.
 5. The state is rendered through `IUiView`; unlock drives `ILock`.
 
 ## Trusted time (anti-cheat)
