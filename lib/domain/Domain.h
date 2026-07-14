@@ -24,7 +24,7 @@ struct BoxConfig {
 // Résultat de l'autorité de temps (spec §5).
 struct TimeStatus {
     bool trusted = false;
-    int64_t effectiveNow = 0;  // valide seulement si trusted == true (min des sources)
+    int64_t effectiveNow = 0;  // valide seulement si trusted == true (max des sources plausibles)
     bool anomaly = false;
 };
 
