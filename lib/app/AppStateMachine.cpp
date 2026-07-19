@@ -10,9 +10,15 @@ AppStateMachine::AppStateMachine(IStore& store, IClockSource& https, IClockSourc
 
 void AppStateMachine::begin() {
     lock_.forceLock();               // fail-closed : verrouillé par défaut
+    lockOpen_ = false;
     loaded_ = store_.load(cfg_);     // si rien -> cfg_ par défaut (non armée)
     passwordSatisfied_ = false;
-    unlockedThisSession_ = false;
+}
+
+void AppStateMachine::applyLock(bool open) {
+    if (lockOpen_ == open) return;   // déjà dans l'état voulu : ne rien commander
+    if (open) lock_.unlock(); else lock_.forceLock();
+    lockOpen_ = open;
 }
 
 PolicyInput AppStateMachine::buildInput(bool passwordSatisfied) {
@@ -62,8 +68,8 @@ void AppStateMachine::handleArm(const UiEvent& ev) {
     store_.save(c);
     cfg_ = c;
     passwordSatisfied_ = false;
-    unlockedThisSession_ = false;
     lock_.forceLock();                  // verrouille immédiatement à l'armement
+    lockOpen_ = false;
 }
 
 void AppStateMachine::handleRearm() {
@@ -75,26 +81,21 @@ void AppStateMachine::handleRearm() {
     store_.save(c);                     // persiste l'état désarmé (survit au reboot)
     cfg_ = c;
     passwordSatisfied_ = false;
-    unlockedThisSession_ = false;
     // Pas de forceLock : la boîte vient d'être ouverte, on la laisse ouverte pour
     // reconfiguration ; le verrouillage se refera à l'armement.
 }
 
 void AppStateMachine::applyResult(const PolicyResult& r) {
     switch (r.state) {
-        case PolicyState::Setup:       ui_.showSetup(); break;
-        case PolicyState::WaitingSync:  ui_.showWaitingSync(); break;
-        case PolicyState::Alert:        ui_.showAlert(); break;
-        case PolicyState::Countdown:    ui_.showCountdown(r.remainingSeconds, cfg_.box.openDate); break;
-        case PolicyState::AskPassword:  ui_.showAskPassword(r.lockedOut, r.retryAt - mono_.nowSeconds(),
+        // Non armée : rien à protéger -> ouverte (sinon impossible d'y déposer
+        // quoi que ce soit après un redémarrage).
+        case PolicyState::Setup:        applyLock(true);  ui_.showSetup(); break;
+        case PolicyState::WaitingSync:  applyLock(false); ui_.showWaitingSync(); break;
+        case PolicyState::Alert:        applyLock(false); ui_.showAlert(); break;
+        case PolicyState::Countdown:    applyLock(false); ui_.showCountdown(r.remainingSeconds, cfg_.box.openDate); break;
+        case PolicyState::AskPassword:  applyLock(false); ui_.showAskPassword(r.lockedOut, r.retryAt - mono_.nowSeconds(),
                                                             cfg_.pwType == PasswordType::Pin); break;
-        case PolicyState::Unlock:
-            if (!unlockedThisSession_) {
-                lock_.unlock();
-                unlockedThisSession_ = true;
-            }
-            ui_.showUnlocked();
-            break;
+        case PolicyState::Unlock:       applyLock(true);  ui_.showUnlocked(); break;
     }
 }
 

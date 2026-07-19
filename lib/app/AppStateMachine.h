@@ -27,6 +27,10 @@ private:
     void handleArm(const UiEvent& ev);
     void handleRearm();   // désarme après ouverture -> retour à l'accueil
 
+    // Pilote le verrou UNIQUEMENT sur changement d'état : ServoLock::writeAngle()
+    // bloque 500 ms, le commander à chaque tick (2x/s) figerait l'interface.
+    void applyLock(bool open);
+
     IStore& store_;
     IClockSource& https_;
     IClockSource& rtc_;
@@ -38,7 +42,7 @@ private:
     StoredConfig cfg_;
     bool loaded_ = false;
     bool passwordSatisfied_ = false;
-    bool unlockedThisSession_ = false;
+    bool lockOpen_ = false;   // état physique courant du verrou (false = fermé)
 };
 
 } // namespace tsafe

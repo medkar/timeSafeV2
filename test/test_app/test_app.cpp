@@ -160,6 +160,26 @@ void test_locked_out_ignores_password_attempt() {
     TEST_ASSERT_TRUE(f.ui.lastLockedOut);
 }
 
+void test_unarmed_box_opens_the_lock() {
+    // Une boîte non armée n'a rien à protéger : le verrou doit s'ouvrir
+    // (sinon impossible d'y déposer quoi que ce soit après un redémarrage).
+    Fixture f; f.build();
+    f.app->begin();                      // fail-closed : verrouille au démarrage
+    TEST_ASSERT_EQUAL_INT(1, f.lock.lockCalls);
+    f.app->tick();
+    TEST_ASSERT_EQUAL_INT((int)PolicyState::Setup, (int)f.ui.lastShown);
+    TEST_ASSERT_EQUAL_INT(1, f.lock.unlockCalls);
+}
+
+void test_lock_is_driven_only_on_state_change() {
+    // ServoLock::writeAngle() bloque 500 ms : re-piloter le verrou à chaque tick
+    // (2x/s) figerait l'UI. Il ne doit être commandé que sur changement d'état.
+    Fixture f; f.build();
+    f.app->begin();
+    f.app->tick(); f.app->tick(); f.app->tick();
+    TEST_ASSERT_EQUAL_INT(1, f.lock.unlockCalls);
+}
+
 void test_arm_request_arms_capsule() {
     Fixture f;
     f.build(); f.app->begin();               // démarre non armée
@@ -224,6 +244,8 @@ int main(int, char**) {
     RUN_TEST(test_theme_change_persists);
     RUN_TEST(test_arm_pin_persists_pwtype_pin);
     RUN_TEST(test_rearm_after_unlock_returns_to_setup);
+    RUN_TEST(test_unarmed_box_opens_the_lock);
+    RUN_TEST(test_lock_is_driven_only_on_state_change);
     RUN_TEST(test_arm_request_arms_capsule);
     RUN_TEST(test_begin_forces_lock);
     RUN_TEST(test_date_not_reached_shows_countdown_stays_locked);
