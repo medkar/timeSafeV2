@@ -11,7 +11,12 @@ AppStateMachine::AppStateMachine(IStore& store, IClockSource& https, IClockSourc
 void AppStateMachine::begin() {
     lock_.forceLock();               // fail-closed : verrouillé par défaut
     lockOpen_ = false;
-    loaded_ = store_.load(cfg_);     // si rien -> cfg_ par défaut (non armée)
+    const LoadStatus st = store_.load(cfg_);          // sinon -> cfg_ par défaut (non armée)
+    loaded_ = (st == LoadStatus::Ok);
+    configCorrupted_ = (st == LoadStatus::Corrupted);
+    // Un décodage partiel a pu écrire n'importe quoi dans cfg_ : on n'en garde
+    // rien, sinon on risquerait une capsule fantôme issue d'octets corrompus.
+    if (configCorrupted_) cfg_ = StoredConfig{};
     passwordSatisfied_ = false;
 }
 
@@ -86,6 +91,14 @@ void AppStateMachine::handleRearm() {
 }
 
 void AppStateMachine::applyResult(const PolicyResult& r) {
+    // Config persistante illisible : la capsule est irrécupérable. On ouvre la
+    // boîte (plutôt que de la condamner) en affichant un message acquittable.
+    if (configCorrupted_) {
+        applyLock(true);
+        ui_.showConfigError();
+        return;
+    }
+
     switch (r.state) {
         // Non armée : rien à protéger -> ouverte (sinon impossible d'y déposer
         // quoi que ce soit après un redémarrage).
@@ -111,6 +124,8 @@ void AppStateMachine::tick() {
     } else if (ev.type == UiEventType::ThemeChanged) {
         cfg_.themeId = ev.themeId;   // le thème choisi survit au reboot
         store_.save(cfg_);
+    } else if (ev.type == UiEventType::ErrorAcknowledged) {
+        configCorrupted_ = false;    // « Compris » -> retour à l'accueil normal
     }
 
     // 2. Décider et agir.

@@ -31,7 +31,12 @@ public:
 class FakeStore : public IStore {
 public:
     bool present = false; StoredConfig data;
-    bool load(StoredConfig& o) override { if (!present) return false; o = data; return true; }
+    bool corrupted = false;   // simule des octets illisibles en NVS
+    LoadStatus load(StoredConfig& o) override {
+        if (!present) return LoadStatus::Empty;
+        o = data;   // un décodage partiel peut avoir écrit n'importe quoi...
+        return corrupted ? LoadStatus::Corrupted : LoadStatus::Ok;
+    }
     bool save(const StoredConfig& c) override { data = c; present = true; return true; }
     bool clear() override { present = false; data = StoredConfig{}; return true; }
 };
@@ -46,6 +51,8 @@ public:
     void showAskPassword(bool lo, int64_t, bool pin) override { lastShown = PolicyState::AskPassword; lastLockedOut = lo; lastPin = pin; }
     void showUnlocked() override { lastShown = PolicyState::Unlock; }
     void showAlert() override { lastShown = PolicyState::Alert; }
+    bool configErrorShown = false;
+    void showConfigError() override { configErrorShown = true; }
     UiEvent pollEvent() override {
         if (idx < queue.size()) return queue[idx++];
         return UiEvent{};
@@ -140,7 +147,7 @@ void test_wrong_password_registers_backoff_and_persists() {
     f.app->tick();
     TEST_ASSERT_EQUAL_INT(0, f.lock.unlockCalls);
     // le compteur d'échec doit être persisté (survit au reboot)
-    StoredConfig saved; TEST_ASSERT_TRUE(f.store.load(saved));
+    StoredConfig saved; TEST_ASSERT_EQUAL_INT((int)LoadStatus::Ok, (int)f.store.load(saved));
     TEST_ASSERT_EQUAL_INT(1, saved.attempts.failedCount);
     TEST_ASSERT_TRUE(saved.attempts.lockedUntil > 100);
 }
@@ -171,6 +178,41 @@ void test_unarmed_box_opens_the_lock() {
     TEST_ASSERT_EQUAL_INT(1, f.lock.unlockCalls);
 }
 
+void test_corrupted_config_opens_the_box_and_warns() {
+    // NVS illisible sur une boîte armée : la capsule est perdue. On ouvre plutôt
+    // que de briquer la boîte, mais on prévient l'utilisateur.
+    Fixture f;
+    f.store.present = true;
+    f.store.data = armedDate(9999999999LL);  // capsule armée, échéance lointaine
+    f.store.corrupted = true;                // ...mais octets illisibles
+    f.build();
+    f.app->begin();
+    f.app->tick();
+    TEST_ASSERT_TRUE(f.ui.configErrorShown);        // message d'erreur affiché
+    TEST_ASSERT_EQUAL_INT(1, f.lock.unlockCalls);   // et la boîte s'ouvre
+}
+
+void test_acknowledging_the_error_returns_to_setup() {
+    // « Compris » referme le message et on retombe sur l'accueil normal. Les
+    // octets illisibles ne doivent pas être repris : sinon on afficherait un
+    // compte à rebours fantôme issu d'une config corrompue.
+    Fixture f;
+    f.store.present = true;
+    f.store.data = armedDate(9999999999LL);
+    f.store.corrupted = true;
+    f.build();
+    f.app->begin();
+    f.app->tick();                       // message affiché
+    f.ui.configErrorShown = false;       // on observe s'il réapparaît
+
+    UiEvent e; e.type = UiEventType::ErrorAcknowledged;
+    f.ui.queue.push_back(e);
+    f.app->tick();
+
+    TEST_ASSERT_FALSE(f.ui.configErrorShown);                        // acquitté
+    TEST_ASSERT_EQUAL_INT((int)PolicyState::Setup, (int)f.ui.lastShown);
+}
+
 void test_lock_is_driven_only_on_state_change() {
     // ServoLock::writeAngle() bloque 500 ms : re-piloter le verrou à chaque tick
     // (2x/s) figerait l'UI. Il ne doit être commandé que sur changement d'état.
@@ -190,7 +232,7 @@ void test_arm_request_arms_capsule() {
     f.https.sample = {true, 1000};           // now(1000) < openDate(5000)
     f.app->tick();
     StoredConfig saved;
-    TEST_ASSERT_TRUE(f.store.load(saved));    // config persistée
+    TEST_ASSERT_EQUAL_INT((int)LoadStatus::Ok, (int)f.store.load(saved));    // config persistée
     TEST_ASSERT_TRUE(saved.box.armed);
     TEST_ASSERT_EQUAL_INT64(5000, saved.box.openDate);
     TEST_ASSERT_EQUAL_INT((int)PolicyState::Countdown, (int)f.ui.lastShown);
@@ -210,7 +252,7 @@ void test_rearm_after_unlock_returns_to_setup() {
     f.ui.queue.push_back(e);
     f.app->tick();
     TEST_ASSERT_EQUAL_INT((int)PolicyState::Setup, (int)f.ui.lastShown);
-    StoredConfig saved; TEST_ASSERT_TRUE(f.store.load(saved));
+    StoredConfig saved; TEST_ASSERT_EQUAL_INT((int)LoadStatus::Ok, (int)f.store.load(saved));
     TEST_ASSERT_FALSE(saved.box.armed);     // config désarmée et persistée
     TEST_ASSERT_FALSE(saved.box.hasDate);
 }
@@ -222,7 +264,7 @@ void test_arm_pin_persists_pwtype_pin() {
     e.newPassword = "123456"; e.isPin = true;
     f.ui.queue.push_back(e);
     f.app->tick();
-    StoredConfig saved; TEST_ASSERT_TRUE(f.store.load(saved));
+    StoredConfig saved; TEST_ASSERT_EQUAL_INT((int)LoadStatus::Ok, (int)f.store.load(saved));
     TEST_ASSERT_TRUE(saved.box.hasPassword);
     TEST_ASSERT_EQUAL_INT((int)PasswordType::Pin, (int)saved.pwType);
     // l'écran de déverrouillage doit indiquer le mode PIN
@@ -235,7 +277,7 @@ void test_theme_change_persists() {
     UiEvent e; e.type = UiEventType::ThemeChanged; e.themeId = 3;
     f.ui.queue.push_back(e);
     f.app->tick();
-    StoredConfig saved; TEST_ASSERT_TRUE(f.store.load(saved));
+    StoredConfig saved; TEST_ASSERT_EQUAL_INT((int)LoadStatus::Ok, (int)f.store.load(saved));
     TEST_ASSERT_EQUAL_UINT8(3, saved.themeId);   // thème persisté (survit au reboot)
 }
 
@@ -244,6 +286,8 @@ int main(int, char**) {
     RUN_TEST(test_theme_change_persists);
     RUN_TEST(test_arm_pin_persists_pwtype_pin);
     RUN_TEST(test_rearm_after_unlock_returns_to_setup);
+    RUN_TEST(test_corrupted_config_opens_the_box_and_warns);
+    RUN_TEST(test_acknowledging_the_error_returns_to_setup);
     RUN_TEST(test_unarmed_box_opens_the_lock);
     RUN_TEST(test_lock_is_driven_only_on_state_change);
     RUN_TEST(test_arm_request_arms_capsule);

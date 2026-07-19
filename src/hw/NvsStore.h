@@ -16,15 +16,16 @@ public:
     // n'a pas pu être ouverte.
     bool begin() { return prefs_.begin(kNamespace, /*readOnly=*/false); }
 
-    bool load(StoredConfig& out) override {
-        if (!prefs_.isKey(kKey)) return false;    // rien de stocké (sans log d'erreur)
+    LoadStatus load(StoredConfig& out) override {
+        if (!prefs_.isKey(kKey)) return LoadStatus::Empty;  // boîte vierge
         size_t n = prefs_.getBytesLength(kKey);
-        if (n == 0) return false;
+        if (n == 0) return LoadStatus::Corrupted;           // clé présente mais vide
         std::string blob;
         blob.resize(n);
         size_t got = prefs_.getBytes(kKey, &blob[0], n);
-        if (got != n) return false;               // lecture partielle -> ignore
-        return ConfigCodec::decode(blob, out);    // false si blob corrompu/incompatible
+        if (got != n) return LoadStatus::Corrupted;         // lecture partielle
+        return ConfigCodec::decode(blob, out) ? LoadStatus::Ok
+                                              : LoadStatus::Corrupted;
     }
 
     bool save(const StoredConfig& cfg) override {

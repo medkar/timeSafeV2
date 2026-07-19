@@ -9,10 +9,10 @@ public:
     bool present = false;
     StoredConfig data;
 
-    bool load(StoredConfig& out) override {
-        if (!present) return false;
+    LoadStatus load(StoredConfig& out) override {
+        if (!present) return LoadStatus::Empty;
         out = data;
-        return true;
+        return LoadStatus::Ok;
     }
     bool save(const StoredConfig& cfg) override {
         data = cfg;
@@ -29,10 +29,10 @@ public:
 void setUp() {}
 void tearDown() {}
 
-void test_load_empty_returns_false() {
+void test_load_empty_returns_empty_status() {
     FakeStore s;
     StoredConfig out;
-    TEST_ASSERT_FALSE(s.load(out));
+    TEST_ASSERT_EQUAL_INT((int)LoadStatus::Empty, (int)s.load(out));
 }
 
 void test_save_then_load_roundtrip() {
@@ -57,7 +57,7 @@ void test_save_then_load_roundtrip() {
     TEST_ASSERT_TRUE(s.save(cfg));
 
     StoredConfig out;
-    TEST_ASSERT_TRUE(s.load(out));
+    TEST_ASSERT_EQUAL_INT((int)LoadStatus::Ok, (int)s.load(out));
     TEST_ASSERT_TRUE(out.box.armed);
     TEST_ASSERT_EQUAL_INT64(123456789, out.box.openDate);
     TEST_ASSERT_EQUAL_INT((int)PasswordType::Alnum, (int)out.pwType);
@@ -77,12 +77,12 @@ void test_clear_removes_data() {
     s.save(cfg);
     TEST_ASSERT_TRUE(s.clear());
     StoredConfig out;
-    TEST_ASSERT_FALSE(s.load(out));
+    TEST_ASSERT_EQUAL_INT((int)LoadStatus::Empty, (int)s.load(out));
 }
 
 int main(int, char**) {
     UNITY_BEGIN();
-    RUN_TEST(test_load_empty_returns_false);
+    RUN_TEST(test_load_empty_returns_empty_status);
     RUN_TEST(test_save_then_load_roundtrip);
     RUN_TEST(test_clear_removes_data);
     return UNITY_END();

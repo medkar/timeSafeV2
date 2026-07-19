@@ -8,7 +8,11 @@ class MemStore : public IStore {
 public:
     StoredConfig data;
     bool present = false;
-    bool load(StoredConfig& o) override { if (!present) return false; o = data; return true; }
+    LoadStatus load(StoredConfig& o) override {
+        if (!present) return LoadStatus::Empty;
+        o = data;
+        return LoadStatus::Ok;
+    }
     bool save(const StoredConfig& c) override { data = c; present = true; return true; }
     bool clear() override { present = false; data = StoredConfig{}; return true; }
 };

@@ -42,7 +42,8 @@ private:
     StoredConfig cfg_;
     bool loaded_ = false;
     bool passwordSatisfied_ = false;
-    bool lockOpen_ = false;   // état physique courant du verrou (false = fermé)
+    bool lockOpen_ = false;        // état physique courant du verrou (false = fermé)
+    bool configCorrupted_ = false; // config illisible : ouvrir + prévenir, jusqu'à acquittement
 };
 
 } // namespace tsafe

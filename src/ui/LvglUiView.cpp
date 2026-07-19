@@ -15,6 +15,10 @@ namespace tsafe {
 static const int kMinYear = 2026;
 static const int kMaxYear = 2035;
 
+// Sentinelle pour cur_ : l'écran d'erreur de config n'est pas un PolicyState
+// (ceux-ci valent 0..5), il lui faut donc sa propre valeur.
+static const int kConfigErrorScreen = 100;
+
 static int daysInMonth(int y, int m) {
     static const int dm[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
     if (m == 2) {
@@ -576,6 +580,13 @@ void LvglUiView::requestRearm() {
     hasPending_ = true;
 }
 
+void LvglUiView::acknowledgeError() {
+    pending_ = UiEvent{};
+    pending_.type = UiEventType::ErrorAcknowledged;
+    hasPending_ = true;
+    cur_ = -1;                 // laisse la machine à états repeindre l'accueil
+}
+
 void LvglUiView::kbReady() {
     const char* txt = lv_textarea_get_text(ta_);
     std::string s = txt ? txt : "";
@@ -667,6 +678,7 @@ void LvglUiView::onPinChoiceCb(lv_event_t* e)   { static_cast<LvglUiView*>(lv_ev
 void LvglUiView::onTextChoiceCb(lv_event_t* e)  { static_cast<LvglUiView*>(lv_event_get_user_data(e))->choosePin(false); }
 void LvglUiView::onArmCb(lv_event_t* e)         { static_cast<LvglUiView*>(lv_event_get_user_data(e))->requestArm(); }
 void LvglUiView::onRearmCb(lv_event_t* e)       { static_cast<LvglUiView*>(lv_event_get_user_data(e))->requestRearm(); }
+void LvglUiView::onErrorAckCb(lv_event_t* e)    { static_cast<LvglUiView*>(lv_event_get_user_data(e))->acknowledgeError(); }
 void LvglUiView::onDateOkCb(lv_event_t* e)      { static_cast<LvglUiView*>(lv_event_get_user_data(e))->validateDate(); }
 void LvglUiView::onKbReadyCb(lv_event_t* e)     { static_cast<LvglUiView*>(lv_event_get_user_data(e))->kbReady(); }
 void LvglUiView::onKbCancelCb(lv_event_t* e)    { static_cast<LvglUiView*>(lv_event_get_user_data(e))->kbCancel(); }
@@ -809,6 +821,45 @@ void LvglUiView::showAlert() {
     lv_obj_clean(lv_screen_active());
     viewAlert(lv_screen_active(), themeById(themeId_));
     cur_ = (int)PolicyState::Alert;
+}
+
+// Config persistante illisible : la capsule est irrécupérable, la boîte s'est
+// ouverte par sécurité. On l'explique franchement, avec un acquittement.
+void LvglUiView::showConfigError() {
+    ensureStatusBar();
+    if (modalWifi_) return;
+    if (cur_ == kConfigErrorScreen) return;
+    const Theme& t = themeById(themeId_);
+    lv_obj_t* scr = lv_screen_active();
+    lv_obj_clean(scr);
+    themeApplyBg(scr, t);
+
+    lv_obj_t* ttl = themeLabel(scr, "CONFIGURATION ILLISIBLE", t.palette.warn, 14, 2);
+    lv_obj_align(ttl, LV_ALIGN_TOP_MID, 0, 30);
+
+    lv_obj_t* msg = themeLabel(scr,
+        "Les données enregistrées sont corrompues.\n"
+        "La capsule en cours est perdue et la boîte\n"
+        "a été ouverte par sécurité.\n\n"
+        "Tu peux la reconfigurer normalement.",
+        t.palette.text, 14);
+    lv_obj_set_style_text_align(msg, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(msg, LV_ALIGN_CENTER, 0, -6);
+
+    lv_obj_t* btn = lv_button_create(scr);
+    lv_obj_set_style_bg_color(btn, lv_color_hex(t.palette.accent), 0);
+    lv_obj_set_style_border_width(btn, 0, 0);
+    lv_obj_set_style_pad_hor(btn, 26, 0);
+    lv_obj_set_style_pad_ver(btn, 12, 0);
+    lv_obj_align(btn, LV_ALIGN_BOTTOM_MID, 0, -26);
+    lv_obj_t* bl = lv_label_create(btn);
+    lv_label_set_text(bl, "Compris");
+    lv_obj_set_style_text_font(bl, themeFont(14), 0);
+    lv_obj_set_style_text_color(bl, lv_color_hex(t.palette.bg), 0);
+    lv_obj_center(bl);
+    lv_obj_add_event_cb(btn, onErrorAckCb, LV_EVENT_CLICKED, this);
+
+    cur_ = kConfigErrorScreen;
 }
 
 UiEvent LvglUiView::pollEvent() {

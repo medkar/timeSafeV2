@@ -25,12 +25,21 @@ struct StoredConfig {
     std::string wifiPass;
 };
 
+// Issue d'une lecture de configuration. Distinguer « vierge » de « illisible »
+// est essentiel : une boîte vierge s'ouvre normalement, tandis qu'une config
+// corrompue doit prévenir l'utilisateur (la capsule a été perdue).
+enum class LoadStatus {
+    Ok,         // config lue et valide
+    Empty,      // rien de stocké (boîte vierge)
+    Corrupted   // données présentes mais illisibles ou incompatibles
+};
+
 // Contrat de stockage. Implémenté en NVS chiffré sur ESP32 (Plan 2),
 // et en mémoire (FakeStore) dans les tests.
 class IStore {
 public:
     virtual ~IStore() {}
-    virtual bool load(StoredConfig& out) = 0; // false si rien de stocké
+    virtual LoadStatus load(StoredConfig& out) = 0;
     virtual bool save(const StoredConfig& cfg) = 0;
     virtual bool clear() = 0;
 };

@@ -106,7 +106,7 @@ void setup() {
     std::string wifiSsid = WIFI_SSID, wifiPass = WIFI_PASS;
     {
         StoredConfig probe;
-        bool had = store.load(probe);
+        bool had = (store.load(probe) == LoadStatus::Ok);
         if (had) {
             ui.setTheme(probe.themeId);          // restaure le thème choisi
             if (!probe.wifiSsid.empty()) {       // WiFi configuré à l'écran ?
@@ -139,7 +139,9 @@ void setup() {
     // resynchronise l'heure à chaud (sans redémarrer -> ne perd pas le brouillon).
     ui.setWifiConfigHandler([](const std::string& ssid, const std::string& pass) {
         StoredConfig c;
-        store.load(c);                       // préserve capsule / thème
+        // Préserve capsule / thème ; si la config est illisible on repart d'une
+        // config vierge plutôt que de réécrire des octets douteux.
+        if (store.load(c) != LoadStatus::Ok) c = StoredConfig{};
         c.wifiSsid = ssid;
         c.wifiPass = pass;
         store.save(c);

@@ -29,6 +29,7 @@ public:
     void showAskPassword(bool lockedOut, int64_t retryInSeconds, bool pin) override;
     void showUnlocked() override;
     void showAlert() override;
+    void showConfigError() override;
     UiEvent pollEvent() override;
 
 private:
@@ -63,6 +64,7 @@ private:
     void validateDate();
     void requestArm();
     void requestRearm();
+    void acknowledgeError();                                // « Compris » sur l'écran d'erreur
     void kbReady();
     void kbCancel();
     void pinKey(lv_event_t* e);                             // touche du pavé numérique
@@ -77,6 +79,7 @@ private:
     static void onTextChoiceCb(lv_event_t* e);
     static void onArmCb(lv_event_t* e);
     static void onRearmCb(lv_event_t* e);
+    static void onErrorAckCb(lv_event_t* e);
     static void onDateOkCb(lv_event_t* e);
     static void onKbReadyCb(lv_event_t* e);
     static void onKbCancelCb(lv_event_t* e);

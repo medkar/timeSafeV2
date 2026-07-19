@@ -6,7 +6,8 @@
 namespace tsafe {
 
 // Événement remonté par l'UI vers la machine à états.
-enum class UiEventType { None, PasswordSubmitted, ArmRequested, RearmRequested, ThemeChanged };
+enum class UiEventType { None, PasswordSubmitted, ArmRequested, RearmRequested, ThemeChanged,
+                         ErrorAcknowledged };  // l'utilisateur a cliqué « Compris »
 
 struct UiEvent {
     UiEventType type = UiEventType::None;
@@ -27,6 +28,9 @@ public:
     virtual void showAskPassword(bool lockedOut, int64_t retryInSeconds, bool pin) = 0;
     virtual void showUnlocked() = 0;
     virtual void showAlert() = 0;
+    // Config persistante illisible : la capsule est perdue et la boîte s'ouvre.
+    // Message acquittable (« Compris ») -> émet ErrorAcknowledged.
+    virtual void showConfigError() = 0;
     virtual UiEvent pollEvent() = 0; // non bloquant ; None si rien
 };
 
