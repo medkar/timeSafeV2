@@ -46,5 +46,5 @@
 
 // ---- Servo lock -------------------------------------------------------------
 #define TS_SERVO_PIN            13
-#define TS_SERVO_ANGLE_LOCKED    0
-#define TS_SERVO_ANGLE_UNLOCKED  90
+#define TS_SERVO_ANGLE_LOCKED    180   // pêne sorti  (fermé)
+#define TS_SERVO_ANGLE_UNLOCKED   50   // pêne rentré (ouvert)
