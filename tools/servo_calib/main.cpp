@@ -3,24 +3,35 @@
 #include "board_config.h"
 
 // ---------------------------------------------------------------------------
-//  Calibration du servo — met le servo à UNE position, puis ne fait plus rien.
+//  Calibration du servo — alterne entre DEUX positions, indéfiniment.
 //
 //  Mode d'emploi :
-//    1. Modifier ANGLE ci-dessous.
+//    1. Régler ANGLE_A / ANGLE_B (et HOLD_MS si besoin).
 //    2. Reflasher :  python -m platformio run -e servocal -t upload
-//    3. Observer la mécanique du pêne, puis recommencer.
+//    3. Observer la mécanique du pêne sur plusieurs cycles.
+//
+//  Astuce : mettre ANGLE_A == ANGLE_B fige le servo sur une seule position
+//  (utile pour tester un angle isolé).
 //
 //  Quand les deux bons angles sont trouvés, les reporter dans
 //  include/board_config.h  ->  TS_SERVO_ANGLE_LOCKED / TS_SERVO_ANGLE_UNLOCKED
 //
 //  Les paramètres d'attache sont IDENTIQUES à ceux de ServoLock (50 Hz,
-//  impulsions 500-2400 us) : l'angle trouvé ici se transpose donc tel quel
+//  impulsions 500-2400 us) : les angles trouvés ici se transposent tels quels
 //  au firmware, sans décalage.
 // ---------------------------------------------------------------------------
 
-static const int ANGLE = 0;   // <<< SEULE VALEUR À CHANGER (0-180)
+static const int      ANGLE_A = 180;     // 1re position
+static const int      ANGLE_B = 50;      // 2e position
+static const uint32_t HOLD_MS = 10000;   // maintien de chaque position (ms)
 
 static Servo servo;
+
+static void goTo(int angle) {
+    servo.write(angle);
+    Serial.printf("[servo_calib] angle=%d\n", angle);
+    delay(HOLD_MS);
+}
 
 void setup() {
     Serial.begin(115200);
@@ -32,10 +43,11 @@ void setup() {
     servo.setPeriodHertz(50);
     servo.attach(TS_SERVO_PIN, 500, 2400);
 
-    servo.write(ANGLE);
-    Serial.printf("[servo_calib] pin=%d  angle=%d\n", TS_SERVO_PIN, ANGLE);
+    Serial.printf("[servo_calib] pin=%d  cycle %d <-> %d  (%lu ms par position)\n",
+                  TS_SERVO_PIN, ANGLE_A, ANGLE_B, (unsigned long)HOLD_MS);
 }
 
 void loop() {
-    delay(1000);   // le servo tient sa position, rien d'autre à faire
+    goTo(ANGLE_A);
+    goTo(ANGLE_B);
 }
