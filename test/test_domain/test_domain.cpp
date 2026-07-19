@@ -24,7 +24,6 @@ void test_policyresult_defaults() {
 void test_timestatus_defaults() {
     TimeStatus t;
     TEST_ASSERT_FALSE(t.trusted);
-    TEST_ASSERT_FALSE(t.anomaly);
 }
 
 int main(int, char**) {

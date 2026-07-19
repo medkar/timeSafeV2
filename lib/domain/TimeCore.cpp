@@ -27,20 +27,18 @@ TimeStatus resolveTime(const TimeResolveInput& in) {
         ++count;
     }
 
-    // Aucune source plausible : temps inconnu (fail-closed), sans anomalie.
+    // Aucune source plausible : temps inconnu -> verrouillé (fail-closed).
     if (count == 0) {
         out.trusted = false;
-        out.anomaly = false;
         return out;
     }
 
     // Règle « OU » (maximum) : la boîte peut s'ouvrir dès qu'UNE source atteint la
-    // date. Pas de verrou d'anomalie sur divergence : dans le modèle (boîte scellée,
+    // date. Aucun blocage sur divergence entre sources : dans le modèle (boîte scellée,
     // RTC interne, pins USB data débranchés, HTTPS épinglé) aucune source ne peut
     // être avancée frauduleusement, donc on privilégie l'ouverture fiable au blocage.
     // Contrepartie assumée : une source qui déraille vers le haut peut ouvrir en avance.
     out.trusted = true;
-    out.anomaly = false;
     out.effectiveNow = mx;
     return out;
 }

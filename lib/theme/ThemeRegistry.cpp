@@ -17,7 +17,6 @@ static const Theme kThemes[] = {
             "Saisie du code",
             "Déverrouillée",
             "Tu peux ouvrir le couvercle.",
-            "Horloge incohérente",
             "Synchronisation…"
         },
         false
@@ -34,7 +33,6 @@ static const Theme kThemes[] = {
             "Code secret",
             "Surprise !",
             "C'est le moment — ouvre vite.",
-            "Petit souci d'horloge",
             "On prépare la surprise…"
         },
         true
@@ -51,7 +49,6 @@ static const Theme kThemes[] = {
             "Code d'accès",
             "Ouverte",
             "Le moment est venu.",
-            "Horloge incohérente",
             "Synchronisation…"
         },
         true
@@ -68,7 +65,6 @@ static const Theme kThemes[] = {
             "Code",
             "C'est l'heure !",
             "Que la fête commence.",
-            "Horloge incohérente",
             "Synchronisation…"
         },
         true
@@ -85,7 +81,6 @@ static const Theme kThemes[] = {
             "Code secret",
             "Youpi !",
             "Tu peux ouvrir !",
-            "Oups, petit souci",
             "Ça arrive…"
         },
         true

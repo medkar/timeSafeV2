@@ -35,7 +35,6 @@ struct ThemeWording {
     const char* passwordTitle;  // ex. "Saisie du code" / "Code secret"
     const char* unlockTitle;    // ex. "Déverrouillée" / "Surprise !"
     const char* unlockSub;      // sous-titre de l'écran ouvert
-    const char* alertTitle;     // ex. "Horloge incohérente" / "Petit souci d'horloge"
     const char* syncTitle;      // ex. "Synchronisation…" / "On prépare la surprise…"
 };
 

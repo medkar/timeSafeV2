@@ -104,7 +104,6 @@ void AppStateMachine::applyResult(const PolicyResult& r) {
         // quoi que ce soit après un redémarrage).
         case PolicyState::Setup:        applyLock(true);  ui_.showSetup(); break;
         case PolicyState::WaitingSync:  applyLock(false); ui_.showWaitingSync(); break;
-        case PolicyState::Alert:        applyLock(false); ui_.showAlert(); break;
         case PolicyState::Countdown:    applyLock(false); ui_.showCountdown(r.remainingSeconds, cfg_.box.openDate); break;
         case PolicyState::AskPassword:  applyLock(false); ui_.showAskPassword(r.lockedOut, r.retryAt - mono_.nowSeconds(),
                                                             cfg_.pwType == PasswordType::Pin); break;

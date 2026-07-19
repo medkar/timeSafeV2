@@ -102,24 +102,6 @@ void viewUnlocked(lv_obj_t* scr, const Theme& t) {
     lv_obj_align(sub, LV_ALIGN_CENTER, 0, 45);
 }
 
-// --- Alerte / anomalie ---
-void viewAlert(lv_obj_t* scr, const Theme& t) {
-    themeApplyBg(scr, t);
-
-    lv_obj_t* ico = lv_label_create(scr);
-    lv_label_set_text(ico, LV_SYMBOL_WARNING);
-    lv_obj_set_style_text_font(ico, themeFont(40), 0);
-    lv_obj_set_style_text_color(ico, lv_color_hex(t.palette.warn), 0);
-    lv_obj_align(ico, LV_ALIGN_CENTER, 0, -55);
-
-    lv_obj_t* title = themeLabel(scr, t.wording.alertTitle, t.palette.warn, 28, 1);
-    lv_obj_align(title, LV_ALIGN_CENTER, 0, 5);
-
-    lv_obj_t* sub = themeLabel(scr, "Sources de temps incoherentes - verrouillee",
-                               t.palette.muted, 14);
-    lv_obj_align(sub, LV_ALIGN_CENTER, 0, 45);
-}
-
 // --- Attente synchro ---
 void viewSync(lv_obj_t* scr, const Theme& t) {
     themeApplyBg(scr, t);

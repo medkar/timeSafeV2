@@ -22,12 +22,6 @@ void test_not_armed_is_setup() {
     TEST_ASSERT_EQUAL_INT((int)PolicyState::Setup, (int)decide(in).state);
 }
 
-void test_anomaly_is_alert() {
-    PolicyInput in = armed(1000);
-    in.time.anomaly = true;
-    TEST_ASSERT_EQUAL_INT((int)PolicyState::Alert, (int)decide(in).state);
-}
-
 void test_date_required_but_time_untrusted_is_waiting() {
     PolicyInput in = armed(1000);
     in.time.trusted = false;
@@ -133,19 +127,9 @@ void test_one_second_before_date_is_countdown() {
     TEST_ASSERT_EQUAL_INT64(1, r.remainingSeconds);
 }
 
-void test_anomaly_takes_precedence_over_countdown() {
-    // Anomalie ET date future : l'anomalie prime (fail-closed), pas de rebours.
-    PolicyInput in = armed(1000);
-    in.config.hasDate = true;
-    in.config.openDate = 5000;
-    in.time.anomaly = true;
-    TEST_ASSERT_EQUAL_INT((int)PolicyState::Alert, (int)decide(in).state);
-}
-
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_not_armed_is_setup);
-    RUN_TEST(test_anomaly_is_alert);
     RUN_TEST(test_date_required_but_time_untrusted_is_waiting);
     RUN_TEST(test_date_not_reached_is_countdown_with_remaining);
     RUN_TEST(test_date_reached_no_password_is_unlock);
@@ -158,6 +142,5 @@ int main(int, char**) {
     RUN_TEST(test_armed_with_no_condition_is_unlock);
     RUN_TEST(test_date_exactly_reached_is_unlock);
     RUN_TEST(test_one_second_before_date_is_countdown);
-    RUN_TEST(test_anomaly_takes_precedence_over_countdown);
     return UNITY_END();
 }

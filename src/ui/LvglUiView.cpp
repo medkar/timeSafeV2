@@ -815,14 +815,6 @@ void LvglUiView::showUnlocked() {
     cur_ = (int)PolicyState::Unlock;
 }
 
-void LvglUiView::showAlert() {
-    if (modalWifi_) return;
-    if (cur_ == (int)PolicyState::Alert) return;
-    lv_obj_clean(lv_screen_active());
-    viewAlert(lv_screen_active(), themeById(themeId_));
-    cur_ = (int)PolicyState::Alert;
-}
-
 // Config persistante illisible : la capsule est irrécupérable, la boîte s'est
 // ouverte par sécurité. On l'explique franchement, avec un acquittement.
 void LvglUiView::showConfigError() {

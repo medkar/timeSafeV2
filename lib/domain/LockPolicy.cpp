@@ -11,13 +11,7 @@ PolicyResult decide(const PolicyInput& in) {
         return r;
     }
 
-    // 2. Anomalie de temps -> alerte, verrouillé (fail-closed).
-    if (in.time.anomaly) {
-        r.state = PolicyState::Alert;
-        return r;
-    }
-
-    // 3. Gate « date » (uniquement si une date est requise).
+    // 2. Gate « date » (uniquement si une date est requise).
     if (in.config.hasDate) {
         if (!in.time.trusted) {
             r.state = PolicyState::WaitingSync;
@@ -32,7 +26,7 @@ PolicyResult decide(const PolicyInput& in) {
 
     // À ce stade : pas de date, ou date atteinte.
 
-    // 4. Gate « mot de passe » (uniquement si requis et pas encore satisfait).
+    // 3. Gate « mot de passe » (uniquement si requis et pas encore satisfait).
     if (in.config.hasPassword && !in.passwordSatisfied) {
         r.state = PolicyState::AskPassword;
         r.lockedOut = in.now < in.attempts.lockedUntil;
@@ -40,7 +34,7 @@ PolicyResult decide(const PolicyInput& in) {
         return r;
     }
 
-    // 5. Toutes les conditions remplies -> ouvrir.
+    // 4. Toutes les conditions remplies -> ouvrir.
     r.state = PolicyState::Unlock;
     return r;
 }

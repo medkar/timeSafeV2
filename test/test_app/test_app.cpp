@@ -50,7 +50,6 @@ public:
     void showCountdown(int64_t r, int64_t) override { lastShown = PolicyState::Countdown; lastRemaining = r; }
     void showAskPassword(bool lo, int64_t, bool pin) override { lastShown = PolicyState::AskPassword; lastLockedOut = lo; lastPin = pin; }
     void showUnlocked() override { lastShown = PolicyState::Unlock; }
-    void showAlert() override { lastShown = PolicyState::Alert; }
     bool configErrorShown = false;
     void showConfigError() override { configErrorShown = true; }
     UiEvent pollEvent() override {

@@ -28,7 +28,6 @@ public:
     void showCountdown(int64_t remainingSeconds, int64_t openDate) override;
     void showAskPassword(bool lockedOut, int64_t retryInSeconds, bool pin) override;
     void showUnlocked() override;
-    void showAlert() override;
     void showConfigError() override;
     UiEvent pollEvent() override;
 

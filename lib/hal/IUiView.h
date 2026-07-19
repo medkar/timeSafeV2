@@ -27,7 +27,6 @@ public:
     virtual void showCountdown(int64_t remainingSeconds, int64_t openDate) = 0;
     virtual void showAskPassword(bool lockedOut, int64_t retryInSeconds, bool pin) = 0;
     virtual void showUnlocked() = 0;
-    virtual void showAlert() = 0;
     // Config persistante illisible : la capsule est perdue et la boîte s'ouvre.
     // Message acquittable (« Compris ») -> émet ErrorAcknowledged.
     virtual void showConfigError() = 0;

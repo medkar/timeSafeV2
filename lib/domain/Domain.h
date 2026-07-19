@@ -6,7 +6,6 @@ namespace tsafe {
 // États possibles décidés par LockPolicy (spec §6).
 enum class PolicyState {
     Setup,        // non armée : menu de configuration
-    Alert,        // anomalie de temps : verrouillé
     WaitingSync,  // date requise mais temps non fiable : verrouillé
     Countdown,    // date requise, pas encore atteinte : verrouillé
     AskPassword,  // conditions de date OK, mot de passe requis
@@ -25,7 +24,6 @@ struct BoxConfig {
 struct TimeStatus {
     bool trusted = false;
     int64_t effectiveNow = 0;  // valide seulement si trusted == true (max des sources plausibles)
-    bool anomaly = false;
 };
 
 // État persistant des tentatives de mot de passe (spec §9).
